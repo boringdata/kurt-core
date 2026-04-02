@@ -1,0 +1,15 @@
+{
+  "urls": [
+    "https://blog.example.com/post/hello-world",
+    "https://blog.example.com/post/second-post",
+    "https://blog.example.com/post/third-post"
+  ],
+  "count": 3,
+  "errors": [],
+  "metadata": {
+    "source": "https://blog.example.com/feed.xml",
+    "format": "rss",
+    "feed_title": "Example Blog",
+    "url_count": 3
+  }
+}

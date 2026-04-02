@@ -25,6 +25,15 @@ from kurt.tools.core import (
 console = Console()
 
 
+def _normalize_http_url(url: str) -> str:
+    """Normalize HTTP(S) URLs to match map tool canonicalization."""
+    if url.startswith(("http://", "https://")):
+        from kurt.tools.map import normalize_url
+
+        return normalize_url(url)
+    return url
+
+
 def _check_engine_status(engine: str) -> tuple[str, str]:
     """Check if engine is ready (has required API key)."""
     if engine == "trafilatura":
@@ -43,12 +52,16 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
         if os.getenv("APIFY_API_KEY"):
             return "ready", "Apify social platform extraction"
         return "missing", "Set APIFY_API_KEY"
+    if engine == "twitterapi":
+        if os.getenv("TWITTERAPI_API_KEY"):
+            return "ready", "TwitterAPI.io extraction"
+        return "missing", "Set TWITTERAPI_API_KEY"
     return "unknown", "Unknown engine"
 
 
 def _list_engines(output_format: str) -> None:
     """List available fetch engines and their status."""
-    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify"]
+    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi"]
     engine_info = []
 
     for engine in engines:
@@ -92,14 +105,24 @@ def _list_engines(output_format: str) -> None:
 @click.option("--file", "single_file", help="Single local file path to fetch")
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
+    "--provider",
+    help="Provider name for fetch (trafilatura, httpx, tavily, firecrawl, apify, twitterapi)",
+)
+@click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify"], case_sensitive=False),
-    help="Fetch engine to use",
+    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify", "twitterapi"], case_sensitive=False),
+    help="[Deprecated: use --provider] Fetch engine to use",
 )
 @click.option(
     "--platform",
     type=click.Choice(["twitter", "linkedin", "threads", "substack"], case_sensitive=False),
     help="Social platform for apify engine",
+)
+@click.option(
+    "--content-type",
+    type=click.Choice(["auto", "doc", "profile", "post"], case_sensitive=False),
+    default="auto",
+    help="Content type (auto=detect from URL pattern, or explicit doc/profile/post)",
 )
 @click.option(
     "--apify-actor",
@@ -141,8 +164,10 @@ def fetch_cmd(
     urls: str | None,
     single_file: str | None,
     files_paths: str | None,
+    provider: str | None,
     engine: str | None,
     platform: str | None,
+    content_type: str | None,
     apify_actor: str | None,
     batch_size: int | None,
     list_engines: bool,
@@ -168,6 +193,13 @@ def fetch_cmd(
     Apify Usage:
       --engine apify --platform twitter https://twitter.com/user
       --engine apify --apify-actor apidojo/tweet-scraper https://twitter.com/user
+
+    \b
+    Content Type (for apify engine):
+      auto     Auto-detect from URL pattern (default)
+      doc      Force document fetch
+      profile  Force profile fetch (e.g., twitter.com/user)
+      post     Force post fetch (e.g., twitter.com/user/status/123)
     """
     if list_engines:
         _list_engines(output_format)
@@ -176,23 +208,33 @@ def fetch_cmd(
     from kurt.documents import resolve_documents
     from kurt.tools.fetch.config import FetchConfig
 
-    # Merge --url into --urls
+    # Normalize identifier if it's a URL (match map tool normalization)
+    if identifier and identifier.startswith(("http://", "https://")):
+        identifier = _normalize_http_url(identifier)
+
+    # Merge --url into --urls and normalize URL inputs
+    url_list: list[str] = []
+    if urls:
+        url_list.extend([u.strip() for u in urls.split(",") if u.strip()])
     if single_url:
-        urls = f"{urls},{single_url}" if urls else single_url
+        url_list.append(single_url.strip())
+    if url_list:
+        url_list = [_normalize_http_url(u) for u in url_list]
+        urls = ",".join(url_list)
+    else:
+        urls = None
 
     # Merge --file into --files
     if single_file:
         files_paths = f"{files_paths},{single_file}" if files_paths else single_file
 
     # Handle --urls: auto-create MapDocument entries if they don't exist
-    if urls:
+    if url_list:
         from sqlmodel import select
 
         from kurt.db import managed_session
         from kurt.tools.core import make_document_id
         from kurt.tools.map.models import MapDocument, MapStatus
-
-        url_list = [u.strip() for u in urls.split(",") if u.strip()]
 
         with managed_session() as session:
             for url in url_list:
@@ -283,14 +325,18 @@ def fetch_cmd(
         return
 
     config_overrides: dict[str, object] = {"dry_run": dry_run}
-    if engine:
-        config_overrides["fetch_engine"] = engine.lower()
+    # --provider takes precedence over deprecated --engine
+    effective_engine = provider or engine
+    if effective_engine:
+        config_overrides["fetch_engine"] = effective_engine.lower()
     if batch_size is not None:
         config_overrides["batch_size"] = batch_size
     if embed is not None:
         config_overrides["embed"] = embed
     if platform:
         config_overrides["platform"] = platform.lower()
+    if content_type and content_type != "auto":
+        config_overrides["content_type"] = content_type.lower()
     if apify_actor:
         config_overrides["apify_actor"] = apify_actor
     config = FetchConfig.from_config("fetch", **config_overrides)
@@ -312,6 +358,7 @@ def fetch_cmd(
         "batch_size": config.batch_size,
         "embed": config.embed,
         "platform": config_overrides.get("platform"),
+        "content_type": config_overrides.get("content_type"),
         "apify_actor": config_overrides.get("apify_actor"),
     }
 

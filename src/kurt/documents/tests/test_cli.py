@@ -157,7 +157,7 @@ class TestE2EWithDocs:
         result = invoke_cli(cli_runner, content_group, ["list", "--format", "json"])
         assert_cli_success(result)
         data = assert_json_output(result)
-        assert len(data) == 7  # 7 documents in tmp_project_with_docs
+        assert len(data) == 8  # 8 documents in tmp_project_with_docs
 
     def test_list_filter_by_status(self, cli_runner: CliRunner, tmp_project_with_docs):
         """Test list filters by fetch status."""

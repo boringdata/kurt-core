@@ -1,30 +1,30 @@
-# Project Context
+# Project Context: kurt-core
 
 ## Purpose
-Kurt Cloud is a managed service extending kurt-core with authentication, multi-tenant workspaces, and team collaboration. Currently uses Supabase for auth and database.
+
+`kurt-core` is the Kurt CLI + core libraries for content ingestion, indexing, retrieval, and research workflows, with an emphasis on an extensible tool/provider system.
 
 ## Tech Stack
-- **Language**: Python 3.11+
-- **Package Manager**: uv
-- **Web Framework**: FastAPI
-- **Database**: PostgreSQL (currently Supabase, migrating to Neon)
-- **Auth**: Supabase Auth (migrating to Neon Auth)
-- **ORM**: SQLAlchemy
-- **Migrations**: Alembic
-- **Deployment**: Vercel
 
-## Architecture
-- `src/api/` - FastAPI routes and middleware
-- `src/db/` - Database models and migrations
-- `src/workspaces/` - Workspace service layer
-- `src/cli/` - CLI commands
+- Language: Python 3.10+
+- Package manager: `uv` (`uv.lock` is committed)
+- CLI: Click
+- Data modeling: Pydantic v2, SQLModel/SQLAlchemy
+- Local DB (current direction): Dolt via MySQL protocol (see `src/kurt/db/`)
 
-## Multi-Tenancy Model
-- Hybrid isolation: RLS on shared tables + per-workspace schemas
-- Each workspace gets: `ws_<id>` schema, `ws_<id>_dbos` user
-- DBOS tables live in workspace schema (no native multi-tenancy)
+## Architecture (High Level)
 
-## External Dependencies
-- **kurt-core**: Workflow engine (mounted at `/core`)
-- **Supabase**: Auth + Database (being replaced)
-- **Neon**: Target database with scale-to-zero + JWT auth
+- `src/kurt/cli/`: CLI commands and UX
+- `src/kurt/tools/`: tool SDK + tool implementations
+- `src/kurt/workflows/`: workflow runtime and TOML-driven execution
+- `src/kurt/db/`: database client, schema, and isolation helpers
+- `openspec/changes/`: change specs/contracts that should be enforced by code + tests
+
+## Notes
+
+If code and docs disagree, prefer:
+
+1. An OpenSpec contract under `openspec/changes/` (when it exists)
+2. Tests that encode the contract
+3. Runtime behavior in `src/`
+

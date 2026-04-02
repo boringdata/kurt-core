@@ -53,15 +53,19 @@ Agents should use these commands to dynamically discover options and access work
 - `kurt content list` - List all indexed documents
 - `kurt content list --url-contains "topic"` - Filter by URL substring
 - `kurt map <url>` - Discover content from a URL (crawls site)
-- `kurt fetch` - Fetch and index discovered documents
+- `kurt fetch` - Fetch and index discovered documents (provider auto-selected from URL)
+- `kurt fetch <url> --provider <name>` - Fetch with explicit provider override
 - `kurt content get <doc-id>` - Get document by ID or URL
 
 **Direct Tool Commands (for pipelines):**
 - `kurt map <url>` - Map/discover URLs from a source
 - `kurt fetch` - Fetch content from discovered URLs
+- `kurt fetch <url> --provider notion` - Fetch with explicit provider
 - `kurt llm --prompt "..." ` - Run LLM prompt over documents
 - `kurt embed` - Generate embeddings
 - `kurt sql "SELECT ..."` - Query the Dolt database
+- `kurt tool list` - List tools and providers
+- `kurt tool providers fetch` - Show available providers for a tool
 
 **Format & Options:**
 - `kurt guides formats` - List available format templates
@@ -343,7 +347,9 @@ For detailed discovery methods, run: `kurt guides discovery`
 **✅ Top-level tool commands (recommended):**
 ```bash
 kurt map <url>          # Discover URLs from a source
-kurt fetch              # Fetch discovered documents
+kurt fetch              # Fetch discovered documents (provider auto-selected)
+kurt fetch <url> --provider notion  # Explicit provider
+kurt tool list          # List tools and providers
 kurt sql "SELECT ..."   # Query the database
 ```
 
@@ -483,70 +489,28 @@ kurt db export --output my-backup.json --pretty
 kurt db import my-backup.json
 ```
 
-### Team Collaboration (Shared PostgreSQL)
+### Team Collaboration (Future)
 
-For team collaboration, use a shared PostgreSQL database with user authentication.
+Kurt uses Dolt as its database backend. Team collaboration features are planned:
 
-**Team Owner Setup:**
+**Current state:**
+- Local Dolt database with Git-like versioning
+- Cloud authentication infrastructure exists (`kurt cloud login`)
+- Workspace tracking for future sync
 
-```bash
-# 1. Login to Kurt Cloud
-kurt cloud login
+**Planned features:**
+- DoltHub remote sync for team collaboration
+- Kurt Cloud with managed hosting
+- GitHub App integration for repo access
+- Web dashboard for team management
+- Scheduled agent workflows
 
-# 2. Add to kurt.config:
-DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-
-# 3. Enable cloud auth (RLS)
-# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
-
-# 4. Run migrations
-kurt admin migrate apply
-
-# 5. Invite team members
-kurt cloud invite teammate@example.com
-```
-
-**Team Member Setup:**
-
-```bash
-# 1. Login with your email
-kurt cloud login
-
-# 2. Add shared config (from team owner)
-# DATABASE_URL="..."
-# WORKSPACE_ID auto-fills on login if provided by cloud; otherwise set it manually
-
-# 3. Enable cloud auth (RLS)
-# CLOUD_AUTH=true  # in kurt.config (auto-set after login when DATABASE_URL is set)
-
-# 4. Run migrations
-kurt admin migrate apply
-```
-
-**Check status:**
+**Check cloud auth status:**
 ```bash
 kurt cloud status
 ```
 
-**Migrate existing data:**
-```bash
-# Export from SQLite
-kurt db export --output backup.json --pretty
-
-# Set DATABASE_URL, WORKSPACE_ID, and CLOUD_AUTH=true (see above)
-
-# Import to Postgres
-kurt db import backup.json --workspace-id <WORKSPACE_ID>
-```
-
 For detailed instructions: `kurt cloud help`
-
-### Kurt Cloud (Future)
-
-Full Kurt Cloud with managed hosting will provide:
-- GitHub App integration for repo access
-- Web dashboard for team management
-- Scheduled agent workflows
 
 ---
 

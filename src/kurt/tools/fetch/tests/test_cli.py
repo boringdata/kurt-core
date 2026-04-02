@@ -12,7 +12,7 @@ from kurt.conftest import (
     assert_output_contains,
     invoke_cli,
 )
-from kurt.tools.fetch.cli import fetch_cmd
+from kurt.tools.fetch.cli import _check_engine_status, fetch_cmd
 
 
 @pytest.fixture
@@ -269,3 +269,77 @@ class TestFetchCommand:
             ],
         )
         assert_cli_success(result)
+
+
+class TestCheckEngineStatus:
+    """Tests for _check_engine_status readiness check (bd-26w.6.1)."""
+
+    def test_trafilatura_always_ready(self):
+        """trafilatura requires no env vars."""
+        status, desc = _check_engine_status("trafilatura")
+        assert status == "ready"
+        assert "local" in desc.lower() or "free" in desc.lower()
+
+    def test_httpx_always_ready(self):
+        """httpx requires no env vars."""
+        status, desc = _check_engine_status("httpx")
+        assert status == "ready"
+
+    def test_twitterapi_ready_with_env(self, monkeypatch):
+        """twitterapi is ready when TWITTERAPI_API_KEY is set."""
+        monkeypatch.setenv("TWITTERAPI_API_KEY", "test-key")
+        status, desc = _check_engine_status("twitterapi")
+        assert status == "ready"
+        assert "TwitterAPI" in desc
+
+    def test_twitterapi_missing_without_env(self, monkeypatch):
+        """twitterapi reports missing when TWITTERAPI_API_KEY is absent."""
+        monkeypatch.delenv("TWITTERAPI_API_KEY", raising=False)
+        status, desc = _check_engine_status("twitterapi")
+        assert status == "missing"
+        assert "TWITTERAPI_API_KEY" in desc
+
+    def test_firecrawl_ready_with_env(self, monkeypatch):
+        """firecrawl is ready when FIRECRAWL_API_KEY is set."""
+        monkeypatch.setenv("FIRECRAWL_API_KEY", "test-key")
+        status, desc = _check_engine_status("firecrawl")
+        assert status == "ready"
+
+    def test_firecrawl_missing_without_env(self, monkeypatch):
+        """firecrawl reports missing when FIRECRAWL_API_KEY is absent."""
+        monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+        status, desc = _check_engine_status("firecrawl")
+        assert status == "missing"
+        assert "FIRECRAWL_API_KEY" in desc
+
+    def test_tavily_ready_with_env(self, monkeypatch):
+        """tavily is ready when TAVILY_API_KEY is set."""
+        monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+        status, desc = _check_engine_status("tavily")
+        assert status == "ready"
+
+    def test_tavily_missing_without_env(self, monkeypatch):
+        """tavily reports missing when TAVILY_API_KEY is absent."""
+        monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+        status, desc = _check_engine_status("tavily")
+        assert status == "missing"
+        assert "TAVILY_API_KEY" in desc
+
+    def test_apify_ready_with_env(self, monkeypatch):
+        """apify is ready when APIFY_API_KEY is set."""
+        monkeypatch.setenv("APIFY_API_KEY", "test-key")
+        status, desc = _check_engine_status("apify")
+        assert status == "ready"
+
+    def test_apify_missing_without_env(self, monkeypatch):
+        """apify reports missing when APIFY_API_KEY is absent."""
+        monkeypatch.delenv("APIFY_API_KEY", raising=False)
+        status, desc = _check_engine_status("apify")
+        assert status == "missing"
+        assert "APIFY_API_KEY" in desc
+
+    def test_unknown_engine(self):
+        """Unknown engine returns 'unknown' status."""
+        status, desc = _check_engine_status("nonexistent")
+        assert status == "unknown"
+        assert "Unknown" in desc

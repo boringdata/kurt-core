@@ -33,7 +33,7 @@ This purpose + intent will guide the rest of the project plan. For examples, the
 ## Documents to Create or Update
 <!-- A checklist of documents to be created or updated.  
 
-This is based on the user's stated goal, as well as use of `kurt content list` CLI commands to determine what already exists that could be worked on. -->
+This is based on the user's stated goal, as well as use of `kurt docs` CLI commands to determine what already exists that could be worked on. -->
 
 - [ ] {{DOCUMENT_1}}: {{DOCUMENT_FORMAT}} ({{DOCUMENT_TEMPLATE_FILE_LOCATION}})
 - [ ] {{DOCUMENT_2}}: {{DOCUMENT_FORMAT}} ({{DOCUMENT_TEMPLATE_FILE_LOCATION}})

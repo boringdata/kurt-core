@@ -1,0 +1,12 @@
+{
+  "content": "# HTTPX Fetched Page\n\nContent fetched via HTTPX with HTTP/2 support.\n\n## Details\n\nThis page was fetched using the httpx provider.",
+  "content_html": "<h1>HTTPX Fetched Page</h1><p>Content fetched via HTTPX with HTTP/2 support.</p><h2>Details</h2><p>This page was fetched using the httpx provider.</p>",
+  "metadata": {
+    "title": "HTTPX Fetched Page",
+    "content_type": "text/html",
+    "content_length": 512,
+    "status_code": 200
+  },
+  "success": true,
+  "error": null
+}

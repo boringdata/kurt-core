@@ -1,0 +1,18 @@
+{
+  "urls": [
+    "https://example.com/",
+    "https://example.com/about",
+    "https://example.com/products",
+    "https://example.com/products/item-1",
+    "https://example.com/products/item-2",
+    "https://example.com/contact"
+  ],
+  "count": 6,
+  "errors": [],
+  "metadata": {
+    "source": "https://example.com/",
+    "format": "crawl",
+    "depth": 2,
+    "url_count": 6
+  }
+}

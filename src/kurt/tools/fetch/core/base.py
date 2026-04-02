@@ -7,6 +7,22 @@ from pydantic import BaseModel, Field
 
 from kurt.tools.fetch.models import DocType, FetchDocument, FetchStatus
 
+# ============================================================================
+# Content Validation Constants
+# ============================================================================
+
+# Maximum content size (10 MB) - prevents memory issues with large files
+MAX_CONTENT_SIZE_BYTES = 10 * 1024 * 1024
+
+# Valid content types for text extraction
+VALID_CONTENT_TYPES = frozenset({
+    "text/html",
+    "text/plain",
+    "application/xhtml+xml",
+    "application/xml",
+    "text/xml",
+})
+
 
 class FetcherConfig(BaseModel):
     """Configuration for fetcher engines."""
@@ -15,6 +31,15 @@ class FetcherConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=5)
     verify_ssl: bool = Field(default=True)
     user_agent: Optional[str] = Field(default=None)
+    max_content_size: int = Field(
+        default=MAX_CONTENT_SIZE_BYTES,
+        gt=0,
+        description="Maximum content size in bytes (default 10MB)",
+    )
+    validate_content_type: bool = Field(
+        default=True,
+        description="Validate content-type header before extraction",
+    )
 
 
 class FetchResult(BaseModel):
@@ -31,7 +56,22 @@ class BaseFetcher(ABC):
     """Base class for content fetchers.
 
     Fetchers retrieve and extract content from URLs.
+
+    Subclasses should set the class-level metadata attributes for
+    provider discovery and validation:
+
+        class MyFetcher(BaseFetcher):
+            name = "my-fetcher"
+            version = "1.0.0"
+            url_patterns = ["example.com/*"]
+            requires_env = ["MY_API_KEY"]
     """
+
+    # Provider metadata for discovery and validation
+    name: str = ""
+    version: str = "1.0.0"
+    url_patterns: list[str] = []
+    requires_env: list[str] = []
 
     def __init__(
         self,
@@ -43,6 +83,16 @@ class BaseFetcher(ABC):
             config: Fetcher configuration
         """
         self.config = config or FetcherConfig()
+
+    def validate_requirements(self) -> list[str]:
+        """Check if all required environment variables are set.
+
+        Returns:
+            List of missing environment variable names. Empty if all present.
+        """
+        import os
+
+        return [var for var in self.requires_env if not os.environ.get(var)]
 
     @abstractmethod
     def fetch(self, url: str) -> FetchResult:

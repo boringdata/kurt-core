@@ -107,6 +107,7 @@ vscode-source/**
 # Temporary/test files
 perm-test.txt
 reverse_vscode.md
+excalidraw.log
 
 content/
 .dolt/noms/
@@ -124,3 +125,7 @@ test-feature/
 kurt-core-45f/
 # bd worktree
 kurt-core-1uhd/
+
+# Agent evidence (not committed to git)
+.agent-evidence/
+.evidence/

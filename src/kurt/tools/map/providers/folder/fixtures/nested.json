@@ -1,0 +1,18 @@
+{
+  "urls": [
+    "file:///project/docs/README.md",
+    "file:///project/docs/guides/setup.md",
+    "file:///project/docs/guides/deployment.md",
+    "file:///project/docs/api/endpoints.md",
+    "file:///project/docs/api/authentication.md"
+  ],
+  "count": 5,
+  "errors": [],
+  "metadata": {
+    "source": "./project/docs",
+    "format": "folder",
+    "file_count": 5,
+    "extensions": [".md"],
+    "recursive": true
+  }
+}

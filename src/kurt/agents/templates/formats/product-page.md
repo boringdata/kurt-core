@@ -98,29 +98,30 @@
 **Product documentation:**
 ```bash
 # Search for product features and capabilities
-kurt content list --url-contains /product | grep -i "<product-name>"
-kurt content list --url-contains /features
-kurt content list --url-contains /docs/ | grep -i "<product-name>"
+kurt docs list --url-contains /product | grep -i "<product-name>"
+kurt docs list --url-contains /features
+kurt docs list --url-contains /docs/ | grep -i "<product-name>"
 
 # If not fetched:
-kurt content fetch --urls "<product-doc-url>"
+kurt tool fetch doc --urls "<product-doc-url>"
 ```
 
 **Pricing/plans info:**
 ```bash
-kurt content list --url-contains /pricing
+kurt docs list --url-contains /pricing
 ```
 
 **Customer evidence:**
 ```bash
-kurt content list --url-contains /customer
-kurt content list --url-contains /testimon
+kurt docs list --url-contains /customer
+kurt docs list --url-contains /testimon
 ```
 
 **If no clusters exist yet:**
 ```bash
 # Cluster existing content to organize by topic
-kurt content cluster --include "*example.com*"
+# Note: kurt content cluster is not yet available in CLI
+# kurt content cluster --include "*example.com*"
 ```
 
 **If insufficient sources: Ask user for product specs, competitive positioning, or customer proof**
@@ -264,17 +265,17 @@ outline:
 
 ```bash
 # Search for product pages
-kurt content list --url-contains /product
-kurt content list --url-contains /solutions
-kurt content list --url-contains /features
+kurt docs list --url-contains /product
+kurt docs list --url-contains /solutions
+kurt docs list --url-contains /features
 
 # Check homepage (often similar style)
-kurt content list --url-starts-with https://<company-domain> | head -5
+kurt docs list --url-starts-with https://<company-domain> | head -5
 ```
 
 **If NOT_FETCHED:**
 ```bash
-kurt content fetch --include "*/product/*" --limit 5
+kurt tool fetch doc --include "*/product/*" --limit 5
 ```
 
 ### Step 2: Select 3-5 Examples (Iterative with User)
@@ -295,8 +296,8 @@ Use these, or provide different URLs?"
 
 ```bash
 # Read pages
-kurt content get <doc-id-1>
-kurt content get <doc-id-2>
+kurt docs get <doc-id-1>
+kurt docs get <doc-id-2>
 ```
 
 **Note these patterns:**
@@ -388,7 +389,7 @@ kurt content get <doc-id-2>
 ### Troubleshooting
 
 **Can't find product pages?**
-- Check: `kurt content stats`
+- Check: `kurt docs list`
 - Try: Homepage or main marketing pages
 - Ask user: "I don't see product pages. Can you provide 3-5 URLs?"
 

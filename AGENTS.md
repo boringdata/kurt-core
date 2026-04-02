@@ -1,49 +1,73 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
+# AGENTS.md
 
-These instructions are for AI assistants working in this project.
+Read this first. Re-read after compaction.
 
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
+## Safety (non-negotiable)
 
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
+- No destructive ops without explicit instruction (no `rm -rf`, `reset --hard`, `clean -fd`, force-push).
+- No secrets in git. Do not paste tokens into commits or logs.
+- No broad rewrite scripts (codemods, "fix everything") without approval.
+- No file variants (`*_v2.*`) — edit in place.
+- Never delete files unless you have explicit written permission.
 
-Keep this managed block so 'openspec update' can refresh the instructions.
+## Shared Conventions
 
-<!-- OPENSPEC:END -->
+These docs define the boring-coding workflow. Read local copy if available; fall back to GitHub.
 
-# Agents
+| Doc | Local | GitHub |
+| --- | --- | --- |
+| Workflow | `/home/ubuntu/projects/boring-coding/docs/workflow/` | [workflow/](https://github.com/boringdata/boring-coding/blob/main/docs/workflow/) |
 
-See [CLAUDE.md](CLAUDE.md) for detailed instructions.
+## Where to Find What
 
-## Landing the Plane (Session Completion)
+| Topic | Doc |
+| --- | --- |
+| Project context | `docs/PROJECT_CONTEXT.md` |
+| Architecture map | `docs/ARCHITECTURE.md` |
+| Core beliefs | `docs/design-docs/core-beliefs.md` |
+| Hard constraints | `docs/design-docs/boundaries.md` |
+| Design decisions (ADRs) | `docs/design-docs/decisions/` |
+| Domain deep-dives | `docs/domains/` |
+| Workflow (planning + impl) | `docs/workflow-symlinked/` |
+| Role prompts | `docs/workflow-symlinked/prompts/` |
+| Beads reference | `docs/workflow-symlinked/beads.md` |
+| Evidence conventions | `docs/workflow-symlinked/EVIDENCE.md` |
+| Session lifecycle | `docs/workflow-symlinked/OPERATIONS.md` |
+| Agent tools | `docs/workflow-symlinked/tools/` |
+| Execution plans | `docs/exec-plans/` |
+| Product specs | `docs/product-specs/` |
+| References | `docs/references/` |
+| Quality grades | `docs/QUALITY.md` |
+| Runbooks | `docs/runbooks/` |
+| Gates | `scripts/gates/` |
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+## Session Startup
 
-**MANDATORY WORKFLOW:**
+1. Read `AGENTS.md` end-to-end.
+2. Read `docs/PROJECT_CONTEXT.md`.
+3. Find how to run tests, lint, dev server (see Project Commands below).
+4. Pick next bead: `bv --robot-next` or `br list --status=open`.
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+For full session lifecycle (compaction, blocked, end-of-session): see `docs/workflow-symlinked/OPERATIONS.md`.
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-Use 'bd' for task tracking
+## Bead Startup (per bead)
+
+1. `br show <bead-id>` — goal, scope, gates, checklist, latest comments.
+2. Find latest `EVIDENCE:` path in bead comments.
+3. Inspect `.agent-evidence/beads/<bead-id>/...` for prior work.
+4. Confirm STATE + NEXT match your role.
+
+## Project Commands
+
+- Install: `uv sync --all-extras`
+- Tests: `uv run pytest -q`
+- Lint: `uv run ruff check .`
+- Dev server: `uv run kurt --help` (CLI tool, no persistent dev server)
+- Smoke gate: `scripts/gates/smoke.sh`
+
+## Credentials
+
+Fetch from Vault:
+- `secret/agent/boringdata-agent` (GitHub token, username, email)
+
+Never commit secrets. Use env vars or `.env` (gitignored).

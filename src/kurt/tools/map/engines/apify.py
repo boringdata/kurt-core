@@ -61,22 +61,44 @@ class ApifyEngine(BaseMapper):
         result = engine.map("machine learning", DocType.POSTS)
     """
 
-    def __init__(self, config: Optional[ApifyMapperConfig] = None):
+    name = "apify"
+    version = "1.0.0"
+    url_patterns = [
+        # Twitter/X handled by dedicated twitterapi provider (fetch tool)
+        "*linkedin.com/*",
+        "*threads.net/*",
+        "*substack.com/*",
+    ]
+    requires_env = ["APIFY_API_KEY"]
+
+    from kurt.tools.map.providers.apify.config import ApifyMapProviderConfig
+    ConfigModel = ApifyMapProviderConfig
+
+    def __init__(self, config: Optional[MapperConfig] = None):
         """Initialize Apify engine.
 
         Args:
-            config: Apify mapper configuration
+            config: Mapper configuration (ApifyMapperConfig for full control)
 
         Raises:
             AuthError: If Apify API key not configured
         """
-        super().__init__(config or ApifyMapperConfig())
+        # Convert base MapperConfig to ApifyMapperConfig if needed
+        if config is None:
+            config = ApifyMapperConfig()
+        elif not isinstance(config, ApifyMapperConfig):
+            config = ApifyMapperConfig(**config.model_dump())
+
+        super().__init__(config)
         self._config: ApifyMapperConfig = self.config  # type: ignore
 
         try:
             self._client = ApifyClient(api_key=self._config.api_key)
-        except ApifyAuthError as e:
-            raise AuthError(f"Apify API key not configured: {e}")
+        except ApifyAuthError:
+            raise AuthError(
+                "APIFY_API_KEY environment variable is not set. "
+                "Get your API key from https://console.apify.com/account/integrations"
+            )
 
     def map(
         self,

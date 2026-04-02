@@ -93,6 +93,25 @@ fetch_engine_option = click.option(
     help="Filter by fetch engine used",
 )
 
+offset_option = click.option(
+    "--offset",
+    type=int,
+    help="Number of documents to skip (for pagination)",
+)
+
+sort_by_option = click.option(
+    "--sort-by",
+    type=click.Choice(["created_at", "source_url", "content_length"], case_sensitive=False),
+    help="Sort results by field (default: created_at)",
+)
+
+sort_order_option = click.option(
+    "--sort-order",
+    type=click.Choice(["asc", "desc"], case_sensitive=False),
+    default="asc",
+    help="Sort order (asc or desc, default: asc)",
+)
+
 # =============================================================================
 # Output Format Options
 # =============================================================================
@@ -167,6 +186,8 @@ def add_filter_options(
     source_type: bool = False,
     has_content: bool = False,
     min_content_length: bool = False,
+    offset: bool = False,
+    sort_by: bool = False,
 ):
     """
     Decorator to add standard filter options to a command.
@@ -179,6 +200,11 @@ def add_filter_options(
     """
 
     def decorator(f):
+        if sort_by:
+            f = sort_order_option(f)
+            f = sort_by_option(f)
+        if offset:
+            f = offset_option(f)
         if min_content_length:
             f = min_content_length_option(f)
         if has_content:
@@ -248,6 +274,71 @@ def add_confirmation_options():
 # =============================================================================
 
 
-def print_json(data: Any) -> None:
-    """Print JSON output for AI agents."""
-    print(json.dumps(data, indent=2, default=str))
+def print_json(data: Any, envelope: bool = False) -> None:
+    """Print JSON output for AI agents.
+
+    Args:
+        data: Data to serialize as JSON
+        envelope: If True, wrap in robot success envelope (beads-style)
+
+    Example:
+        print_json({"count": 42})  # Raw JSON
+        print_json({"count": 42}, envelope=True)  # {"success": true, "data": {...}}
+    """
+    if envelope:
+        from kurt.cli.robot import robot_success
+
+        print(robot_success(data))
+    else:
+        print(json.dumps(data, indent=2, default=str))
+
+
+# =============================================================================
+# Robot Mode Re-exports
+# =============================================================================
+
+# Re-export robot mode utilities for convenience
+# Usage: from kurt.tools.core import OutputContext, robot_success, robot_error
+try:
+    from kurt.cli.robot import (
+        ErrorCode,
+        OutputContext,
+        is_json_mode,
+        is_tty,
+        robot_error,
+        robot_success,
+    )
+
+    __all__ = [
+        # Filter options
+        "include_option",
+        "ids_option",
+        "limit_option",
+        "exclude_option",
+        # Output options
+        "format_option",
+        "format_table_option",
+        # Confirmation options
+        "dry_run_option",
+        "yes_option",
+        # Background options
+        "background_option",
+        "priority_option",
+        # Composed decorators
+        "add_filter_options",
+        "add_output_options",
+        "add_background_options",
+        "add_confirmation_options",
+        # Output formatting
+        "print_json",
+        # Robot mode
+        "OutputContext",
+        "robot_success",
+        "robot_error",
+        "ErrorCode",
+        "is_json_mode",
+        "is_tty",
+    ]
+except ImportError:
+    # Robot module not yet installed
+    pass

@@ -45,7 +45,7 @@ def get_dolt_db(
             determined from get_config_file_path() or falls back to cwd.
         init_schema: If True, initialize observability schema if missing.
             When the database doesn't exist and init_schema is True, the
-            database is also created (init + schema) in embedded mode.
+            database is also created (dolt init + schema creation).
         use_database_client: If True, use get_database_client() factory
             which respects DATABASE_URL env var for server mode (MySQL).
             This is used by tools/core/runner.py.

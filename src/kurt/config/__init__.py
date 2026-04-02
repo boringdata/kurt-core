@@ -26,6 +26,12 @@ from kurt.config.base import (
     validate_config,
 )
 
+# Re-export provider config resolver
+from kurt.config.provider_config import (
+    ProviderConfigResolver,
+    get_provider_config_resolver,
+)
+
 # Re-export config utilities for integrations
 from kurt.config.utils import (
     config_exists_for_prefix,
@@ -40,6 +46,9 @@ from kurt.config.utils import (
 __all__ = [
     # Base config
     "KurtConfig",
+    # Provider config
+    "ProviderConfigResolver",
+    "get_provider_config_resolver",
     "ModelSettings",
     "config_file_exists",
     "create_config",

@@ -282,6 +282,7 @@ class Tool(ABC, Generic[InputT, OutputT]):
     description: str
     InputModel: type[InputT]
     OutputModel: type[OutputT]
+    default_provider: str | None = None  # Default provider name for this tool
 
     @abstractmethod
     async def run(

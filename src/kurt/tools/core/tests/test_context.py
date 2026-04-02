@@ -61,7 +61,7 @@ def clean_env(monkeypatch):
         "KURT_FETCH_ENGINE",
         "KURT_FETCH_TIMEOUT",
         "KURT_CONTENT_DIR",
-        "KURT_DOLT_MODE",
+        # Note: KURT_DOLT_MODE removed - server mode is always used
         "KURT_DOLT_PATH",
         "KURT_DOLT_SERVER_URL",
     ]
@@ -101,7 +101,7 @@ class TestSettingsModels:
     def test_dolt_settings_defaults(self):
         """DoltSettings has correct defaults."""
         settings = DoltSettings()
-        assert settings.mode == "embedded"
+        # Note: mode field removed - server mode is always used
         assert settings.path == ".dolt"
         assert settings.server_url == "localhost:3306"
         assert settings.user == "root"
@@ -113,7 +113,7 @@ class TestSettingsModels:
         assert settings.llm.default_model == "gpt-4o-mini"
         assert settings.fetch.default_engine == "trafilatura"
         assert settings.storage.content_dir == "./content"
-        assert settings.dolt.mode == "embedded"
+        # Note: dolt.mode field removed - server mode is always used
 
 
 # ============================================================================
@@ -213,11 +213,7 @@ class TestEnvOverrides:
         result = _apply_env_overrides({})
         assert result["storage"]["content_dir"] == "/custom/content"
 
-    def test_apply_env_overrides_dolt_mode(self, clean_env, monkeypatch):
-        """KURT_DOLT_MODE env var overrides dolt.mode."""
-        monkeypatch.setenv("KURT_DOLT_MODE", "server")
-        result = _apply_env_overrides({})
-        assert result["dolt"]["mode"] == "server"
+    # Note: test_apply_env_overrides_dolt_mode removed - KURT_DOLT_MODE no longer used
 
     def test_apply_env_overrides_fetch_timeout_int(self, clean_env, monkeypatch):
         """KURT_FETCH_TIMEOUT is converted to int."""
@@ -365,9 +361,9 @@ class TestInitFunctions:
         import asyncio
         asyncio.run(client.aclose())
 
-    def test_init_dolt_db_embedded(self, tmp_path):
-        """_init_dolt_db creates DoltDB in embedded mode."""
-        settings = DoltSettings(mode="embedded", path=".dolt")
+    def test_init_dolt_db_server_default(self, tmp_path):
+        """_init_dolt_db always creates DoltDB in server mode."""
+        settings = DoltSettings(path=".dolt")
 
         # Mock DoltDB to avoid actual dolt CLI check
         with patch("kurt.db.dolt.DoltDB") as mock_dolt:
@@ -378,19 +374,19 @@ class TestInitFunctions:
 
             assert result == mock_instance
             # DoltDB expects repo root path (parent of .dolt), not .dolt itself
+            # Server mode is always used regardless of settings
             mock_dolt.assert_called_once_with(
                 path=tmp_path,
-                mode="embedded",
+                mode="server",
                 host="localhost",
                 port=3306,
                 user="root",
                 password="",
             )
 
-    def test_init_dolt_db_server(self, tmp_path):
+    def test_init_dolt_db_custom_url(self, tmp_path):
         """_init_dolt_db parses server URL correctly."""
         settings = DoltSettings(
-            mode="server",
             path=".dolt",
             server_url="myhost:3307",
             user="myuser",
@@ -404,6 +400,7 @@ class TestInitFunctions:
             _init_dolt_db(settings, tmp_path)
 
             # DoltDB expects repo root path (parent of .dolt), not .dolt itself
+            # Server mode is always used
             mock_dolt.assert_called_once_with(
                 path=tmp_path,
                 mode="server",

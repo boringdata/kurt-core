@@ -69,6 +69,9 @@ from .context import (
 
 # Error types
 from .errors import (
+    ProviderNotFoundError,
+    ProviderRequirementsError,
+    ProviderValidationError,
     ToolCanceledError,
     ToolConfigError,
     ToolError,
@@ -83,6 +86,12 @@ from .hooks import (
     CompositeStepHooks,
     NoopStepHooks,
     StepHooks,
+)
+
+# Provider registry
+from .provider import (
+    ProviderRegistry,
+    get_provider_registry,
 )
 
 # Registry functions
@@ -131,6 +140,12 @@ __all__ = [
     "ToolExecutionError",
     "ToolTimeoutError",
     "ToolCanceledError",
+    "ProviderNotFoundError",
+    "ProviderRequirementsError",
+    "ProviderValidationError",
+    # Provider registry
+    "ProviderRegistry",
+    "get_provider_registry",
     # Registry
     "TOOLS",
     "register_tool",

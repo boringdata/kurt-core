@@ -166,6 +166,7 @@ def tmp_project_with_docs(tmp_project: Path):
     - 2 fetched documents
     - 1 document with fetch error
     - 1 document with map error
+    - 1 file-based document
     """
     with managed_session() as session:
         # Discovered, not fetched
@@ -270,6 +271,18 @@ def tmp_project_with_docs(tmp_project: Path):
                 discovery_method="crawl",
                 status=MapStatus.ERROR,
                 error="Invalid URL format",
+            )
+        )
+
+        # File-based document (for source_type filter testing)
+        session.add(
+            MapDocument(
+                document_id="doc-8",
+                source_url="file:///docs/readme.md",
+                source_type="file",
+                discovery_method="folder",
+                status=MapStatus.SUCCESS,
+                title="README",
             )
         )
 
@@ -495,6 +508,18 @@ def _create_test_documents(session):
         )
     )
 
+    # File-based document (for source_type filter testing)
+    session.add(
+        MapDocument(
+            document_id="doc-8",
+            source_url="file:///docs/readme.md",
+            source_type="file",
+            discovery_method="folder",
+            status=MapStatus.SUCCESS,
+            title="README",
+        )
+    )
+
     session.commit()
 
 
@@ -503,7 +528,7 @@ def _clean_test_data(session):
     from sqlmodel import select
 
     # Delete test documents
-    for doc_id in ["doc-1", "doc-2", "doc-3", "doc-4", "doc-5", "doc-6", "doc-7"]:
+    for doc_id in ["doc-1", "doc-2", "doc-3", "doc-4", "doc-5", "doc-6", "doc-7", "doc-8"]:
         # Delete fetch first (FK constraint)
         fetch = session.exec(
             select(FetchDocument).where(FetchDocument.document_id == doc_id)

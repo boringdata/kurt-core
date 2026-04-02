@@ -46,7 +46,7 @@ def content_group():
 
 
 @content_group.command("list")
-@add_filter_options()
+@add_filter_options(source_type=True, offset=True, sort_by=True)
 @format_table_option
 @track_command
 def list_cmd(
@@ -57,6 +57,10 @@ def list_cmd(
     with_status: str | None,
     with_content_type: str | None,
     limit: int | None,
+    source_type: str | None,
+    offset: int | None,
+    sort_by: str | None,
+    sort_order: str,
     output_format: str,
 ):
     """
@@ -67,6 +71,9 @@ def list_cmd(
         kurt content list                           # List all documents
         kurt content list --limit 10                # List first 10
         kurt content list --with-status FETCHED     # List fetched documents
+        kurt content list --source-type url         # List URL-sourced documents
+        kurt content list --limit 10 --offset 5     # Paginate results
+        kurt content list --sort-by created_at      # Sort by creation date
         kurt content list --format json             # JSON output for agents
     """
     from kurt.documents import DocumentFilters
@@ -78,6 +85,10 @@ def list_cmd(
         include=include_pattern,
         url_contains=url_contains,
         limit=limit,
+        source_type=source_type,
+        offset=offset,
+        order_by=sort_by,
+        order_desc=(sort_order == "desc"),
     )
 
     # Map CLI status to internal status

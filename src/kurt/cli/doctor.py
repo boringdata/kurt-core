@@ -10,12 +10,20 @@ Doctor checks:
 3. branch_sync: Git branch matches Dolt branch
 4. no_uncommitted_dolt: Dolt status is clean
 5. remotes_configured: Both Git and Dolt have 'origin' remote
-6. no_stale_locks: No .git/kurt-hook.lock older than 30s
+6. no_stale_dolt_locks: No stale .dolt/noms/LOCK files
+7. stale_server_info: No stale .dolt/kurt-server.json with dead PIDs
+8. sql_server: Dolt SQL server reachable (server mode required)
+9. no_stale_locks: No .git/kurt-hook.lock older than 30s
+
+SQL Runtime:
+Kurt uses server mode exclusively for SQL operations. The dolt sql-server
+is auto-started for local targets (localhost) if not running. Remote servers
+must be started and accessible independently. Each project gets its own
+server on its own port to avoid conflicts.
 """
 
 from __future__ import annotations
 
-import json as json_module
 import os
 import subprocess
 import time
@@ -26,6 +34,8 @@ from typing import Any
 
 import click
 from rich.console import Console
+
+from kurt.cli.robot import ErrorCode, OutputContext, robot_error, robot_success
 
 console = Console()
 
@@ -348,6 +358,209 @@ def check_remotes_configured(git_path: Path, dolt_path: Path) -> CheckResult:
     )
 
 
+def _parse_server_config() -> tuple[str, int]:
+    """Parse server host and port from environment.
+
+    Respects both KURT_DOLT_SERVER_URL and KURT_DOLT_PORT overrides.
+    Returns (host, port) tuple with safe defaults on parse errors.
+    """
+    server_url = os.environ.get("KURT_DOLT_SERVER_URL", "localhost:3306")
+    parts = server_url.split(":")
+    host = parts[0]
+
+    # Default port from URL or 3306
+    port = 3306
+    if len(parts) > 1:
+        try:
+            port = int(parts[1])
+        except ValueError:
+            pass  # Use default on parse error
+
+    # KURT_DOLT_PORT overrides port from URL (consistent with database.py)
+    if os.environ.get("KURT_DOLT_PORT"):
+        try:
+            port = int(os.environ["KURT_DOLT_PORT"])
+        except ValueError:
+            pass  # Use URL port or default on parse error
+
+    return host, port
+
+
+def check_sql_server(dolt_path: Path) -> CheckResult:
+    """Check if Dolt SQL server is reachable.
+
+    Server mode is the only supported runtime for SQL operations.
+    For local servers (localhost), Kurt auto-starts the server if needed.
+    For remote servers, the server must be running and accessible.
+    """
+    import socket
+
+    # Get server configuration from environment
+    host, port = _parse_server_config()
+
+    # Check if this is a local server target
+    is_local = host in ("localhost", "127.0.0.1", "::1")
+
+    # Try to connect to the server
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((host if host != "localhost" else "127.0.0.1", port))
+        sock.close()
+        server_running = result == 0
+    except Exception:
+        server_running = False
+
+    if server_running:
+        # For local servers, verify it's the correct project's server
+        if is_local:
+            info_file = dolt_path / "kurt-server.json"
+            if info_file.exists():
+                try:
+                    import json as json_mod
+
+                    info = json_mod.loads(info_file.read_text())
+                    expected_path = str(dolt_path.parent.resolve())
+                    actual_path = info.get("path", "")
+                    if actual_path != expected_path:
+                        return CheckResult(
+                            name="sql_server",
+                            status=CheckStatus.WARN,
+                            message=f"SQL server on port {port} belongs to different project",
+                            details=f"Expected: {expected_path}\nActual: {actual_path}\n"
+                            "Consider using a different port or stopping the other server.",
+                        )
+                except Exception:
+                    pass  # Can't verify, assume it's ok
+
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.PASS,
+            message=f"Dolt SQL server reachable at {host}:{port}",
+        )
+
+    # Server not running
+    if is_local:
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.FAIL,
+            message=f"Dolt SQL server not running on {host}:{port}",
+            details="Run 'kurt repair' to auto-start, or manually run:\n"
+            f"  cd {dolt_path.parent} && dolt sql-server --port {port}",
+        )
+    else:
+        return CheckResult(
+            name="sql_server",
+            status=CheckStatus.FAIL,
+            message=f"Cannot connect to remote Dolt SQL server at {host}:{port}",
+            details="Ensure the Dolt SQL server is running on the remote host.\n"
+            "Check network connectivity and firewall settings.",
+        )
+
+
+def check_no_stale_dolt_locks(dolt_path: Path) -> CheckResult:
+    """Check for stale Dolt noms LOCK files.
+
+    These can occur when dolt sql-server is killed ungracefully (e.g., pkill).
+    A LOCK file is considered stale only if no server is running for this project.
+    """
+    lock_file = dolt_path / "noms" / "LOCK"
+
+    if not lock_file.exists():
+        return CheckResult(
+            name="no_stale_dolt_locks",
+            status=CheckStatus.PASS,
+            message="No Dolt lock files present",
+        )
+
+    # Check if a server is running for this project
+    info_file = dolt_path / "kurt-server.json"
+    server_running = False
+    if info_file.exists():
+        try:
+            import json as json_mod
+
+            info = json_mod.loads(info_file.read_text())
+            pid = info.get("pid")
+            if pid:
+                try:
+                    os.kill(pid, 0)  # Check if process exists
+                    server_running = True
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+    if server_running:
+        return CheckResult(
+            name="no_stale_dolt_locks",
+            status=CheckStatus.PASS,
+            message="Dolt lock file present (server running)",
+        )
+
+    # No server running but lock file exists - it's stale
+    return CheckResult(
+        name="no_stale_dolt_locks",
+        status=CheckStatus.FAIL,
+        message="Stale Dolt lock file (no server running)",
+        details="Run 'kurt repair' to remove stale lock",
+    )
+
+
+def check_stale_server_info(dolt_path: Path) -> CheckResult:
+    """Check for stale kurt-server.json files with dead PIDs.
+
+    The kurt-server.json file tracks which project started a server.
+    If the PID is dead but the file exists, it's stale and can cause
+    connection issues.
+    """
+    info_file = dolt_path / "kurt-server.json"
+
+    if not info_file.exists():
+        return CheckResult(
+            name="stale_server_info",
+            status=CheckStatus.PASS,
+            message="No server info file",
+        )
+
+    try:
+        import json as json_mod
+
+        info = json_mod.loads(info_file.read_text())
+        pid = info.get("pid")
+
+        if pid is None:
+            return CheckResult(
+                name="stale_server_info",
+                status=CheckStatus.PASS,
+                message="Server info file present (no PID)",
+            )
+
+        # Check if process is still running
+        try:
+            os.kill(pid, 0)  # Signal 0 = check if process exists
+            return CheckResult(
+                name="stale_server_info",
+                status=CheckStatus.PASS,
+                message=f"Server info valid (PID {pid} running)",
+            )
+        except OSError:
+            # Process doesn't exist - stale info file
+            return CheckResult(
+                name="stale_server_info",
+                status=CheckStatus.WARN,
+                message=f"Stale server info (PID {pid} not running)",
+                details="Run 'kurt repair' to clean up",
+            )
+    except Exception as e:
+        return CheckResult(
+            name="stale_server_info",
+            status=CheckStatus.WARN,
+            message="Could not check server info file",
+            details=str(e),
+        )
+
+
 def check_no_stale_locks(git_path: Path) -> CheckResult:
     """Check for stale kurt-hook.lock files."""
     lock_dir = git_path / ".git" / "kurt-hook.lock"
@@ -356,7 +569,7 @@ def check_no_stale_locks(git_path: Path) -> CheckResult:
         return CheckResult(
             name="no_stale_locks",
             status=CheckStatus.PASS,
-            message="No lock files present",
+            message="No Git hook lock files present",
         )
 
     # Check lock age
@@ -419,12 +632,15 @@ def run_doctor(git_path: Path, dolt_path: Path) -> DoctorReport:
     checks.append(check_hooks_installed(git_path))
     checks.append(check_dolt_initialized(dolt_path))
 
-    # Only check branch sync if Dolt is initialized
+    # Only check branch sync and SQL server if Dolt is initialized
     dolt_init_result = checks[-1]
     if dolt_init_result.status == CheckStatus.PASS:
         checks.append(check_branch_sync(git_path, dolt_path))
         checks.append(check_no_uncommitted_dolt(dolt_path))
         checks.append(check_remotes_configured(git_path, dolt_path))
+        checks.append(check_no_stale_dolt_locks(dolt_path))
+        checks.append(check_stale_server_info(dolt_path))
+        checks.append(check_sql_server(dolt_path))
 
     checks.append(check_no_stale_locks(git_path))
 
@@ -445,8 +661,11 @@ def run_doctor(git_path: Path, dolt_path: Path) -> DoctorReport:
 
 
 @click.command(name="doctor")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def doctor_cmd(as_json: bool):
+@click.option(
+    "--json", "as_json", is_flag=True, help="Output as JSON (deprecated: use global --json)"
+)
+@click.pass_context
+def doctor_cmd(ctx, as_json: bool):
     """Check project health and report issues.
 
     Runs a series of checks to verify the Kurt project is properly configured:
@@ -457,7 +676,10 @@ def doctor_cmd(as_json: bool):
     3. branch_sync: Git branch matches Dolt branch
     4. no_uncommitted_dolt: Dolt status is clean
     5. remotes_configured: Both Git and Dolt have 'origin' remote
-    6. no_stale_locks: No .git/kurt-hook.lock older than 30s
+    6. no_stale_dolt_locks: No stale .dolt/noms/LOCK files
+    7. stale_server_info: No stale .dolt/kurt-server.json with dead PIDs
+    8. sql_server: Dolt SQL server is reachable (server mode required)
+    9. no_stale_locks: No .git/kurt-hook.lock older than 30s
 
     Exit codes:
       0: All checks passed
@@ -466,20 +688,26 @@ def doctor_cmd(as_json: bool):
 
     Example:
         kurt doctor
+        kurt --json doctor
         kurt doctor --json
     """
+    # Get output context from global --json flag
+    output: OutputContext = ctx.obj.get("output", OutputContext()) if ctx.obj else OutputContext()
+
+    # Hybrid activation: global --json OR local --json flag
+    use_json = output.json_mode or as_json
+
     try:
         git_path = _get_git_path()
 
         # Check if Git repo
         if not _is_git_repo(git_path):
-            if as_json:
-                console.print(
-                    json_module.dumps(
-                        {
-                            "error": "Not a Git repository",
-                            "exit_code": 2,
-                        }
+            if use_json:
+                print(
+                    robot_error(
+                        ErrorCode.CONFIG_ERROR,
+                        "Not a Git repository",
+                        hint="Run: git init",
                     )
                 )
             else:
@@ -492,8 +720,9 @@ def doctor_cmd(as_json: bool):
         # Run checks
         report = run_doctor(git_path, dolt_path)
 
-        if as_json:
-            console.print(json_module.dumps(report.to_dict(), indent=2))
+        if use_json:
+            # Wrap in robot success envelope
+            print(robot_success(report.to_dict(), exit_code=report.exit_code))
         else:
             _print_report(report)
 
@@ -502,8 +731,8 @@ def doctor_cmd(as_json: bool):
     except SystemExit:
         raise
     except Exception as e:
-        if as_json:
-            console.print(json_module.dumps({"error": str(e), "exit_code": 2}))
+        if use_json:
+            print(robot_error(ErrorCode.EXEC_ERROR, str(e)))
         else:
             console.print(f"[red]Error: {e}[/red]")
         raise SystemExit(2)
@@ -591,10 +820,46 @@ def get_repair_actions(report: DoctorReport) -> list[RepairAction]:
             actions.append(
                 RepairAction(
                     check_name="no_stale_locks",
-                    description="Remove stale lock file",
+                    description="Remove stale Git hook lock file",
                     action="remove_lock",
                 )
             )
+        elif check.name == "no_stale_dolt_locks" and check.status == CheckStatus.FAIL:
+            actions.append(
+                RepairAction(
+                    check_name="no_stale_dolt_locks",
+                    description="Remove stale Dolt lock file",
+                    action="remove_dolt_lock",
+                )
+            )
+        elif check.name == "stale_server_info" and check.status == CheckStatus.WARN:
+            actions.append(
+                RepairAction(
+                    check_name="stale_server_info",
+                    description="Clean up stale server info file",
+                    action="clean_server_info",
+                )
+            )
+        elif check.name == "sql_server" and check.status == CheckStatus.FAIL:
+            # Use consistent server config parsing
+            host, _ = _parse_server_config()
+            if host in ("localhost", "127.0.0.1", "::1"):
+                actions.append(
+                    RepairAction(
+                        check_name="sql_server",
+                        description="Start Dolt SQL server",
+                        action="start_server",
+                    )
+                )
+            else:
+                # Remote server - can't auto-start, but show it needs attention
+                actions.append(
+                    RepairAction(
+                        check_name="sql_server",
+                        description="Remote SQL server unreachable (manual start required)",
+                        action="notify_remote_server",
+                    )
+                )
 
     return actions
 
@@ -612,7 +877,8 @@ def do_sync_branch(git_path: Path, dolt_path: Path) -> bool:
     from kurt.db.dolt import DoltDB
     from kurt.db.isolation.branch import sync_to_git
 
-    dolt_db = DoltDB(dolt_path)
+    # DoltDB expects project root (dir containing .dolt), not .dolt itself
+    dolt_db = DoltDB(dolt_path.parent)
     try:
         sync_to_git(git_path, dolt_db)
         return True
@@ -647,7 +913,7 @@ def do_commit_dolt(dolt_path: Path) -> bool:
 
 
 def do_remove_lock(git_path: Path) -> bool:
-    """Remove stale lock file."""
+    """Remove stale Git hook lock file."""
     import shutil
 
     lock_dir = git_path / ".git" / "kurt-hook.lock"
@@ -658,6 +924,142 @@ def do_remove_lock(git_path: Path) -> bool:
         except Exception:
             return False
     return True
+
+
+def do_remove_dolt_lock(dolt_path: Path) -> bool:
+    """Remove stale Dolt noms LOCK file.
+
+    This file can become stale when dolt sql-server is killed ungracefully.
+    """
+    lock_file = dolt_path / "noms" / "LOCK"
+    if lock_file.exists():
+        try:
+            lock_file.unlink()
+            return True
+        except Exception:
+            return False
+    return True
+
+
+def do_clean_server_info(dolt_path: Path) -> bool:
+    """Clean up stale kurt-server.json file.
+
+    Removes the file if the PID it references is no longer running.
+    """
+    info_file = dolt_path / "kurt-server.json"
+    if not info_file.exists():
+        return True
+
+    try:
+        import json as json_mod
+
+        info = json_mod.loads(info_file.read_text())
+        pid = info.get("pid")
+
+        # If no PID or PID is dead, remove the file
+        if pid is not None:
+            try:
+                os.kill(pid, 0)
+                # Process is running - don't remove
+                return False
+            except OSError:
+                pass  # Process dead, continue to remove
+
+        info_file.unlink()
+        return True
+    except Exception:
+        return False
+
+
+def do_start_server(dolt_path: Path) -> bool:
+    """Start Dolt SQL server for local development.
+
+    Only works for local servers (localhost). For remote servers,
+    the server must be started manually on the remote host.
+    """
+    import shutil
+    import socket
+
+    # Use consistent server config parsing
+    host, port = _parse_server_config()
+
+    # Safety check: only start local servers
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        console.print(f"[yellow]Cannot auto-start remote server at {host}[/yellow]")
+        return False
+
+    # Check if server is already running
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(("127.0.0.1", port))
+        sock.close()
+        if result == 0:
+            console.print(f"[yellow]Server already running on port {port}[/yellow]")
+            return True
+    except Exception:
+        pass
+
+    # Check dolt CLI is available
+    if not shutil.which("dolt"):
+        console.print("[red]Dolt CLI not installed[/red]")
+        return False
+
+    # Start the server
+    try:
+        proc = subprocess.Popen(
+            ["dolt", "sql-server", "--port", str(port), "--host", "127.0.0.1"],
+            cwd=dolt_path.parent,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        server_pid = proc.pid
+
+        # Wait for server to be ready
+        import time
+
+        for _ in range(30):  # 3 second timeout
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(("127.0.0.1", port))
+                sock.close()
+                if result == 0:
+                    # Write server info file
+                    info_file = dolt_path / "kurt-server.json"
+                    try:
+                        import json as json_mod
+
+                        info = {
+                            "path": str(dolt_path.parent.resolve()),
+                            "port": port,
+                            "pid": server_pid,
+                        }
+                        info_file.write_text(json_mod.dumps(info))
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+
+        return False
+    except Exception as e:
+        console.print(f"[red]Failed to start server: {e}[/red]")
+        return False
+
+
+def do_notify_remote_server() -> bool:
+    """Notify user that remote server needs manual attention.
+
+    This action doesn't fix anything - it just surfaces the issue
+    so the repair command doesn't falsely report "healthy".
+    """
+    host, port = _parse_server_config()
+    console.print(f"[yellow]Remote SQL server at {host}:{port} is unreachable.[/yellow]")
+    console.print("[yellow]Please start the server manually on the remote host.[/yellow]")
+    return False  # Return False so it shows as FAILED in repair output
 
 
 # =============================================================================
@@ -680,7 +1082,14 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
     - hooks_installed=fail: Reinstall Git hooks
     - branch_sync=fail: Sync Dolt branch to match Git
     - no_uncommitted_dolt=warn: Commit pending Dolt changes
-    - no_stale_locks=fail: Remove stale lock files
+    - no_stale_locks=fail: Remove stale Git hook lock files
+    - no_stale_dolt_locks=fail: Remove stale Dolt noms LOCK files
+    - stale_server_info=warn: Clean up stale server info files
+    - sql_server=fail: Start Dolt SQL server (local only)
+
+    SQL Server Repair:
+      For local servers (localhost), Kurt will auto-start the dolt sql-server.
+      For remote servers, you must start the server manually on the remote host.
 
     Use --dry-run to preview repairs without making changes.
 
@@ -688,6 +1097,8 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
         kurt repair                  # Fix all issues
         kurt repair --dry-run        # Preview repairs
         kurt repair --check=hooks_installed  # Fix specific check
+        kurt repair --check=sql_server       # Start local SQL server
+        kurt repair --check=no_stale_dolt_locks  # Remove stale Dolt locks
         kurt repair --yes            # Skip confirmations
     """
     try:
@@ -752,6 +1163,14 @@ def repair_cmd(dry_run: bool, yes: bool, check_name: str | None, force: bool):
                 success = do_commit_dolt(dolt_path)
             elif action.action == "remove_lock":
                 success = do_remove_lock(git_path)
+            elif action.action == "remove_dolt_lock":
+                success = do_remove_dolt_lock(dolt_path)
+            elif action.action == "clean_server_info":
+                success = do_clean_server_info(dolt_path)
+            elif action.action == "start_server":
+                success = do_start_server(dolt_path)
+            elif action.action == "notify_remote_server":
+                success = do_notify_remote_server()
 
             if success:
                 console.print("[green]OK[/green]")

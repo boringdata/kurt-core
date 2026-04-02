@@ -194,6 +194,21 @@ def build_joined_query(filters: DocumentFilters) -> Select:
     if filters.created_before:
         query = query.where(MapDocument.created_at <= filters.created_before)
 
+    # Ordering
+    if filters.order_by:
+        # Map field names to actual columns
+        order_columns = {
+            "created_at": MapDocument.created_at,
+            "source_url": MapDocument.source_url,
+            "content_length": FetchDocument.content_length,
+        }
+        order_col = order_columns.get(filters.order_by)
+        if order_col is not None:
+            if filters.order_desc:
+                query = query.order_by(order_col.desc())
+            else:
+                query = query.order_by(order_col.asc())
+
     # Pagination
     if filters.offset:
         query = query.offset(filters.offset)

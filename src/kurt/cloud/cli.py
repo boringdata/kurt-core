@@ -955,16 +955,14 @@ def cloud_help_cmd():
 KURT CLOUD SETUP
 ===============================================================
 
-Kurt supports three database modes:
-  - Local SQLite (default) - .kurt/kurt.sqlite
-  - Shared PostgreSQL - Team collaboration with shared Supabase/Postgres
-  - Kurt Cloud (future) - Fully managed with GitHub integration
+Kurt uses Dolt as its database backend - a SQL database with
+Git-like version control features.
 
 ===============================================================
 AUTHENTICATION
 ===============================================================
 
-LOGIN (required for shared database):
+LOGIN (for future cloud features):
   kurt cloud login
 
 CHECK STATUS:
@@ -974,26 +972,22 @@ LOGOUT:
   kurt cloud logout
 
 ===============================================================
-SHARED POSTGRESQL SETUP (TEAM OWNER)
+DATABASE: DOLT
 ===============================================================
 
-1. LOGIN TO KURT CLOUD:
-   kurt cloud login
+Kurt uses Dolt for all data storage:
+  - Git-like versioning: branch, commit, merge, diff
+  - MySQL protocol: standard SQL via SQLModel
+  - Local-first: works offline
 
-2. GET A DATABASE URL:
-   From Supabase, Neon, or your Postgres provider
+===============================================================
+TEAM COLLABORATION (PLANNED)
+===============================================================
 
-3. ADD TO kurt.config:
-   DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-
-4. ENABLE CLOUD AUTH (RLS):
-   CLOUD_AUTH=true
-
-5. RUN MIGRATIONS:
-   kurt admin migrate apply
-
-6. VERIFY:
-   kurt cloud status
+Team collaboration features are planned:
+  - DoltHub remote sync
+  - Kurt Cloud managed hosting
+  - GitHub App integration
 
 ===============================================================
 """

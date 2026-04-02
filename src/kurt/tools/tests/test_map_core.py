@@ -5,7 +5,6 @@ import pytest
 
 from kurt.tools.map.core import (
     BaseMapper,
-    MapDocumentStorage,
     MapperConfig,
     MapperResult,
     extract_domain,
@@ -139,41 +138,6 @@ class TestBaseMapper:
         id1 = mapper._generate_document_id(url)
         id2 = mapper._generate_document_id(url)
         assert id1 == id2
-
-
-class TestMapDocumentStorage:
-    """Test MapDocumentStorage."""
-
-    def test_bulk_create_empty(self):
-        """Test bulk create with empty list."""
-        count = MapDocumentStorage.bulk_create([])
-        assert count == 0
-
-    def test_bulk_create_count(self):
-        """Test bulk create returns correct count."""
-        from kurt.tools.map.models import MapDocument
-
-        docs = [
-            MapDocument(document_id="1", source_url="https://example.com/1"),
-            MapDocument(document_id="2", source_url="https://example.com/2"),
-        ]
-        count = MapDocumentStorage.bulk_create(docs)
-        assert count == 2
-
-    def test_get_by_url_returns_none(self):
-        """Test get_by_url returns None (not implemented)."""
-        result = MapDocumentStorage.get_by_url("https://example.com")
-        assert result is None
-
-    def test_count_by_type_returns_zero(self):
-        """Test count_by_type returns 0 (not implemented)."""
-        count = MapDocumentStorage.count_by_type("doc")
-        assert count == 0
-
-    def test_delete_by_url_returns_false(self):
-        """Test delete_by_url returns False (not implemented)."""
-        result = MapDocumentStorage.delete_by_url("https://example.com")
-        assert result is False
 
 
 class TestNormalizeUrl:

@@ -509,7 +509,8 @@ Structure: Hook (5s) → Problem (20s) → How it works (40s) → Benefits (15s)
 1. **Watch 3-5 of your existing videos:**
 ```bash
 # Find existing video content or scripts
-kurt content search "video"
+# NOTE: Search is not yet available in CLI
+# kurt content search "video"
 ```
 
 2. **Analyze their style:**

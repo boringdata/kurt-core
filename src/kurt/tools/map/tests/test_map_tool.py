@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -903,3 +903,192 @@ class TestMapToolPersistence:
             urls = {d.source_url for d in docs}
             assert "https://example.com/page1" in urls
             assert "https://example.com/page2" in urls
+
+
+# ============================================================================
+# MapInput Engine Field Tests (bd-285.5.4)
+# ============================================================================
+
+
+class TestMapInputEngineField:
+    """Test that MapInput accepts and validates the engine field."""
+
+    def test_engine_field_accepted(self):
+        """MapInput accepts engine parameter."""
+        params = MapInput(source="url", url="https://example.com", engine="sitemap")
+        assert params.engine == "sitemap"
+
+    def test_engine_default_none(self):
+        """Engine defaults to None when not set."""
+        params = MapInput(source="url", url="https://example.com")
+        assert params.engine is None
+
+    def test_engine_with_discovery_method(self):
+        """Engine and discovery_method can coexist."""
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            engine="rss",
+            discovery_method="auto",
+        )
+        assert params.engine == "rss"
+        assert params.discovery_method == "auto"
+
+    def test_engine_arbitrary_string(self):
+        """Engine accepts arbitrary provider names (e.g., apify)."""
+        params = MapInput(source="url", url="https://example.com", engine="apify")
+        assert params.engine == "apify"
+
+
+# ============================================================================
+# MapTool Engine Override Tests (bd-285.5.4)
+# ============================================================================
+
+
+class TestMapToolEngineOverride:
+    """Test that engine overrides discovery_method in MapTool.run()."""
+
+    @pytest.mark.asyncio
+    async def test_engine_overrides_discovery_method_to_rss(self):
+        """engine='rss' causes MapTool to use RSS discovery."""
+        tool = MapTool()
+        context = ToolContext()
+
+        params = MapInput(
+            source="url",
+            url="https://example.com/feed",
+            discovery_method="auto",
+            engine="rss",
+            dry_run=True,
+        )
+
+        # Mock the RSS discovery module (lazy-imported inside _map_url)
+        mock_urls = ["https://example.com/post1", "https://example.com/post2"]
+        with patch(
+            "kurt.tools.map.engines.rss.discover_from_rss_impl",
+            return_value=(mock_urls, []),
+        ) as mock_rss:
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=Mock(status_code=200, text=""))
+            context.http = mock_http
+
+            result = await tool.run(params, context)
+
+        # RSS discovery should have been called
+        mock_rss.assert_called_once()
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_engine_overrides_discovery_method_to_sitemap(self):
+        """engine='sitemap' forces sitemap-only discovery (no crawl fallback)."""
+        tool = MapTool()
+        context = ToolContext()
+
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="auto",
+            engine="sitemap",
+            dry_run=True,
+        )
+
+        # Mock sitemap discovery to return items
+        mock_items = [
+            {
+                "url": "https://example.com/page1",
+                "source_type": "sitemap",
+                "discovered_from": "https://example.com/sitemap.xml",
+                "depth": 0,
+            }
+        ]
+        with patch(
+            "kurt.tools.map.tool.discover_from_sitemap",
+            return_value=(mock_items, None),
+        ):
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=Mock(status_code=200, text=""))
+            context.http = mock_http
+
+            result = await tool.run(params, context)
+
+        assert result.success is True
+        assert len(result.data) >= 1
+
+    @pytest.mark.asyncio
+    async def test_engine_overrides_discovery_method_to_crawl(self):
+        """engine='crawl' forces crawl even with depth=0 and auto mode."""
+        tool = MapTool()
+        context = ToolContext()
+
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="auto",
+            depth=0,  # Normally auto+depth=0 wouldn't crawl
+            engine="crawl",
+            dry_run=True,
+        )
+
+        # With engine="crawl", discovery_method is overridden to "crawl"
+        # and crawl mode should be triggered regardless of depth
+        with patch(
+            "kurt.tools.map.tool.discover_from_crawl",
+            return_value=[
+                {
+                    "url": "https://example.com/page1",
+                    "source_type": "page",
+                    "discovered_from": "https://example.com",
+                    "depth": 0,
+                }
+            ],
+        ):
+            mock_http = AsyncMock()
+            mock_http.get = AsyncMock(return_value=Mock(status_code=200, text=""))
+            context.http = mock_http
+
+            result = await tool.run(params, context)
+
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_unknown_engine_does_not_override(self):
+        """Unknown engine names don't override discovery_method."""
+        tool = MapTool()
+        context = ToolContext()
+
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="auto",
+            engine="apify",  # Not in valid discovery methods
+            dry_run=True,
+        )
+
+        # With unknown engine, discovery_method stays "auto"
+        # Auto mode with depth=0 tries sitemap then single page fallback
+        with patch(
+            "kurt.tools.map.tool.discover_from_sitemap",
+            return_value=([], "No sitemap found"),
+        ):
+            mock_http = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.text = ""
+            mock_http.get = AsyncMock(return_value=mock_response)
+            context.http = mock_http
+
+            result = await tool.run(params, context)
+
+        # Should still work (fallback to single page)
+        assert result.success is True
+
+    def test_engine_none_no_override(self):
+        """engine=None does not override discovery_method."""
+        params = MapInput(
+            source="url",
+            url="https://example.com",
+            discovery_method="sitemap",
+            engine=None,
+        )
+        # discovery_method should remain as set
+        assert params.discovery_method == "sitemap"

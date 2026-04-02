@@ -1,38 +1,40 @@
-# Agents
+# OpenSpec (kurt-core)
 
-## Repository Map
+This folder is the source of truth for change proposals, specs, and task breakdowns.
 
-| Repo | Location | Branch | Workflow |
-|------|----------|--------|----------|
-| **kurt-cloud** | `.` | `main` | Direct commits to main |
-| **kurt-core** | `../kurt-core-neon-migration` | `neon-migration` | PR for review |
+Open this file when a request involves a plan/proposal/spec, breaking changes, architecture shifts, or ambiguous requirements.
 
-### Git Workflow
+## Where Things Live
 
-**Kurt-Cloud:** Work directly on `main`
-```bash
-cd /Users/julien/Documents/wik/wikumeo/projects/kurt-cloud
-# Make changes, commit, push
-```
+- Project overview: `openspec/project.md`
+- Change proposals/specs/tasks: `openspec/changes/<change-slug>/`
 
-**Kurt-Core:** Work on branch, create PR
-```bash
-cd ../kurt-core-neon-migration
-git branch  # Should show: * neon-migration
+Examples (existing change directories):
 
-# After all changes complete:
-git push origin neon-migration
-gh pr create --title "feat: Neon migration support" --base main
-```
+- `openspec/changes/provider-system/`
+- `openspec/changes/kurt-simplification/`
 
-## Active Changes
+## Change Directory Structure
 
-### migrate-to-neon
-**Status**: In Progress
-**Scope**: kurt-cloud (Phase 2) + kurt-core (Phase 3)
+Create a new change under `openspec/changes/<change-slug>/` using the existing pattern:
 
-Migrate from Supabase (Auth + Postgres) to Neon (Auth + Postgres) for:
-- Scale-to-zero compute
-- Direct SQL access with JWT
-- Remove REST API endpoints (use direct SQL + RLS)
-- Database-level rate limiting
+- `proposal.md`: why we are changing, scope/non-scope, constraints, open questions
+- `spec.md` or `SPEC.md`: the technical design/contract (interfaces, rules, invariants)
+- `tasks.md`: executable task list (or beads decomposition)
+- Optional: `design.md`, `ARCHITECTURE.md`, `TESTING.md`, `CONFIGURATION.md` (when useful)
+
+Conventions:
+
+- Use a stable slug (kebab-case).
+- Put dates in ISO format (`YYYY-MM-DD`).
+- If the spec defines behavior contracts, include at least one test plan section and link to the test location in the repo.
+
+## Applying a Change
+
+When implementing an OpenSpec change:
+
+1. Identify the authoritative spec file(s) under `openspec/changes/<slug>/`.
+2. Implement only what the spec requires; avoid opportunistic refactors.
+3. Add/adjust tests to enforce the spec contract.
+4. Update docs under `docs/` if the change affects developer workflows or user-visible behavior.
+

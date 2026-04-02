@@ -335,7 +335,7 @@ class TestParseWorkflowBasic:
             config = { model = "text-embedding-3-small" }
 
             [steps.save]
-            type = "write"
+            type = "write-db"
             depends_on = ["embed"]
             config = { table = "documents" }
             """,
@@ -368,7 +368,7 @@ class TestParseWorkflowBasic:
 class TestParseWorkflowStepTypes:
     """Tests for step type validation."""
 
-    @pytest.mark.parametrize("step_type", ["map", "fetch", "llm", "embed", "write", "sql", "agent"])
+    @pytest.mark.parametrize("step_type", ["map", "fetch", "llm", "embed", "write-db", "sql", "agent"])
     def test_valid_step_types(self, tmp_workflow_dir: Path, step_type: str):
         """All valid step types are accepted."""
         toml_path = write_toml(
@@ -867,7 +867,7 @@ class TestParseWorkflowIntegration:
             depends_on = ["merge"]
 
             [steps.save]
-            type = "write"
+            type = "write-db"
             depends_on = ["analyze", "embed"]
             config = { table = "output" }
             """,
@@ -914,7 +914,7 @@ class TestParseWorkflowIntegration:
             depends_on = ["step_llm", "step_embed"]
 
             [steps.step_write]
-            type = "write"
+            type = "write-db"
             depends_on = ["step_sql"]
 
             [steps.step_agent]
@@ -926,4 +926,4 @@ class TestParseWorkflowIntegration:
         result = parse_workflow(toml_path, validate_tools=False)
 
         types_used = {step.type for step in result.steps.values()}
-        assert types_used == {"map", "fetch", "llm", "embed", "sql", "write", "agent"}
+        assert types_used == {"map", "fetch", "llm", "embed", "sql", "write-db", "agent"}

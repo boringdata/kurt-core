@@ -48,7 +48,14 @@ class TestStatusCommand:
         import json
 
         data = json.loads(result.output)
-        assert data["initialized"] is False
+        # Robot envelope: error case uses {"success": false, "error": {...}}
+        if "error" in data:
+            assert data["success"] is False
+            assert data["error"]["code"] == "NOT_INITIALIZED"
+        else:
+            # Success case wraps data
+            inner = data.get("data", data)
+            assert inner["initialized"] is False
 
     def test_status_with_database(self, cli_runner: CliRunner, tmp_project_with_docs):
         """Test status shows documents when database has data."""
@@ -76,6 +83,9 @@ class TestStatusCommand:
             import json
 
             data = json.loads(result.output)
+            # Robot envelope wraps data
+            if "data" in data and "error" not in data:
+                data = data["data"]
             assert data["initialized"] is True
             assert "documents" in data
             assert data["documents"]["total"] == 7
@@ -151,6 +161,7 @@ class TestStatusPrettyFormat:
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("kurt.status.cli._get_status_data", return_value=mock_status),
+            patch.dict("os.environ", {"FORCE_TTY": "1"}),  # Force TTY for pretty output
         ):
             result = invoke_cli(cli_runner, status, [])
             assert_cli_success(result)
@@ -176,6 +187,7 @@ class TestStatusPrettyFormat:
             patch("kurt.config.config_file_exists", return_value=True),
             patch("kurt.config.load_config", return_value=mock_config),
             patch("kurt.status.cli._get_status_data", return_value=mock_status),
+            patch.dict("os.environ", {"FORCE_TTY": "1"}),  # Force TTY for pretty output
         ):
             result = invoke_cli(cli_runner, status, [])
             assert_cli_success(result)

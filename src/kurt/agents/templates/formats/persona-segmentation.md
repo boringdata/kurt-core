@@ -676,9 +676,10 @@ Ask user to help schedule:
 
 ```bash
 # Search for existing customer insights
-kurt content search "interview"
-kurt content search "customer"
-kurt content search "feedback"
+# Note: search is not yet available in CLI
+# kurt content search "interview"
+# kurt content search "customer"
+# kurt content search "feedback"
 ```
 
 Ask user for:

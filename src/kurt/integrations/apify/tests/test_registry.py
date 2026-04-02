@@ -25,7 +25,7 @@ class TestActorRegistry:
     def test_registry_contains_linkedin_actors(self):
         """Test registry has LinkedIn actors."""
         assert "curious_coder/linkedin-post-search-scraper" in ACTOR_REGISTRY
-        assert "anchor/linkedin-profile-scraper" in ACTOR_REGISTRY
+        assert "apimaestro/linkedin-profile-detail" in ACTOR_REGISTRY
 
     def test_registry_contains_threads_actors(self):
         """Test registry has Threads actors."""
@@ -74,7 +74,7 @@ class TestProfileActors:
 
     def test_linkedin_profile_actor(self):
         """Test LinkedIn profile actor."""
-        assert PROFILE_ACTORS.get("linkedin") == "anchor/linkedin-profile-scraper"
+        assert PROFILE_ACTORS.get("linkedin") == "apimaestro/linkedin-profile-detail"
 
     def test_substack_profile_actor(self):
         """Test Substack profile actor."""
@@ -127,7 +127,7 @@ class TestGetProfileActor:
 
     def test_get_linkedin_profile_actor(self):
         """Test getting LinkedIn profile actor."""
-        assert get_profile_actor("linkedin") == "anchor/linkedin-profile-scraper"
+        assert get_profile_actor("linkedin") == "apimaestro/linkedin-profile-detail"
 
     def test_case_insensitive(self):
         """Test that lookup is case insensitive."""

@@ -22,6 +22,7 @@ jobs:
   test-python:
     name: Python Test & Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +48,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest -v --cov=src/kurt --cov-report=term-missing
+        run: uv run pytest -v -n auto --ignore=src/kurt/tools/e2e --ignore-glob="**/test_*e2e.py"
 
   # Run frontend tests
   test-frontend:

@@ -202,10 +202,17 @@ class MapInput(BaseModel):
         description="Glob patterns to exclude (e.g., '*.pdf', '/admin/*')",
     )
 
+    # Provider/engine override (injected by executor from ProviderRegistry)
+    engine: str | None = Field(
+        default=None,
+        description="Provider engine override (e.g., 'sitemap', 'crawl', 'rss'). "
+        "When set by the executor, overrides discovery_method for URL sources.",
+    )
+
     # URL-specific options
-    discovery_method: Literal["auto", "sitemap", "crawl", "folder", "cms"] = Field(
+    discovery_method: Literal["auto", "sitemap", "crawl", "rss", "folder", "cms"] = Field(
         default="auto",
-        description="Discovery method: 'auto', 'sitemap', 'crawl', 'folder', or 'cms'",
+        description="Discovery method: 'auto', 'sitemap', 'crawl', 'rss', 'folder', or 'cms'",
     )
     sitemap_path: str | None = Field(
         default=None,
@@ -765,7 +772,7 @@ async def discover_from_cms(
         Tuple of (discovered items, error message or None)
     """
     try:
-        from kurt.tools.map.cms import discover_from_cms as discover_cms
+        from kurt.tools.map.engines.cms import discover_from_cms_impl as discover_cms
 
         result = discover_cms(platform=cms_platform, instance=cms_instance, limit=max_pages)
         items: list[dict[str, Any]] = result.get("discovered", [])
@@ -807,6 +814,7 @@ class MapTool(Tool[MapInput, MapOutput]):
 
     name = "map"
     description = "Discover content sources from URLs, files, or CMS"
+    default_provider = "sitemap"
     InputModel = MapInput
     OutputModel = MapOutput
 
@@ -830,6 +838,19 @@ class MapTool(Tool[MapInput, MapOutput]):
         result = ToolResult(success=True)
         items: list[dict[str, Any]] = []
         error: str | None = None
+
+        # Apply engine override from provider resolution.
+        # When the executor resolves a provider (e.g., "sitemap", "rss", "crawl"),
+        # it injects it as `engine`. Map this to discovery_method so the tool
+        # actually uses the resolved provider.
+        valid_methods = {"sitemap", "crawl", "rss", "folder", "cms"}
+        if params.engine and params.engine in valid_methods:
+            params.discovery_method = params.engine  # type: ignore[assignment]
+            logger.debug(
+                "Engine '%s' overriding discovery_method to '%s'",
+                params.engine,
+                params.discovery_method,
+            )
 
         # Dispatch based on source type
         if params.source == "url":
@@ -968,6 +989,53 @@ class MapTool(Tool[MapInput, MapOutput]):
                 # Fall back to crawl if auto mode (only if depth > 0)
                 if params.discovery_method == "sitemap":
                     return [], sitemap_error
+
+            # RSS mode
+            if params.discovery_method == "rss":
+                self.emit_progress(
+                    on_progress,
+                    substep="map_rss",
+                    status="running",
+                    message="Discovering from RSS feed",
+                )
+                from kurt.tools.map.engines.rss import discover_from_rss_impl
+
+                urls, rss_errors = discover_from_rss_impl(
+                    params.url,
+                    timeout=params.timeout,
+                    max_urls=params.max_pages,
+                )
+                if urls:
+                    items = [
+                        {
+                            "url": normalize_url(url),
+                            "source_type": "rss",
+                            "discovered_from": params.url,
+                            "depth": 0,
+                        }
+                        for url in urls
+                    ]
+                    # Apply filters
+                    if params.include_patterns or params.exclude_patterns:
+                        filtered_urls = filter_items(
+                            [item["url"] for item in items],
+                            include_patterns=params.include_patterns,
+                            exclude_patterns=params.exclude_patterns,
+                            max_items=params.max_pages,
+                        )
+                        items = [item for item in items if item["url"] in set(filtered_urls)]
+
+                    self.emit_progress(
+                        on_progress,
+                        substep="map_rss",
+                        status="completed",
+                        current=len(items),
+                        total=len(items),
+                    )
+                    return items, None
+                else:
+                    error_msg = "; ".join(rss_errors) if rss_errors else f"No RSS feed found at {params.url}"
+                    return [], error_msg
 
             # Crawl mode (or fallback from auto when depth > 0)
             # In auto mode, only crawl if user explicitly set depth > 0
