@@ -20,6 +20,12 @@ class FrontendBuildHook(BuildHookInterface):
             self.app.display_info("Skipping frontend build (SKIP_FRONTEND_BUILD set)")
             return
 
+        # Editable installs do not need packaged frontend assets; the dedicated
+        # frontend CI job already validates the client bundle separately.
+        if version == "editable":
+            self.app.display_info("Skipping frontend build for editable install")
+            return
+
         # Only build for wheel target
         if self.target_name != "wheel":
             return
