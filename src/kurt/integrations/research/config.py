@@ -62,7 +62,7 @@ def get_source_config(source: str) -> dict[str, Any]:
     Get configuration for a specific research source.
 
     Args:
-        source: Research source name (e.g., 'perplexity')
+        source: Research source name (e.g., 'perplexity', 'apify')
 
     Returns:
         Source-specific configuration dictionary
@@ -74,23 +74,27 @@ def get_source_config(source: str) -> dict[str, Any]:
 
     if source not in config:
         available = ", ".join(config.keys()) if config else "none configured"
+        # Determine the correct key name for this source
+        key_name = "API_TOKEN" if source == "apify" else "API_KEY"
         raise ValueError(
             f"No configuration found for research source '{source}'.\n"
             f"Available sources: {available}\n"
             f"\n"
             f"To configure {source}, add to kurt.config:\n"
-            f"  RESEARCH_{source.upper()}_API_KEY=your_api_key_here"
+            f"  RESEARCH_{source.upper()}_{key_name}=your_key_here"
         )
 
-    # Check for placeholder API key
+    # Check for placeholder API key/token
     source_config = config[source]
-    api_key = source_config.get("api_key", "")
-    if "YOUR_" in api_key or "PLACEHOLDER" in api_key:
+    # Check both api_key and api_token (different sources use different names)
+    api_credential = source_config.get("api_key") or source_config.get("api_token", "")
+    if "YOUR_" in api_credential or "PLACEHOLDER" in api_credential:
+        key_name = "API_TOKEN" if source == "apify" else "API_KEY"
         raise ValueError(
-            f"API key not configured for '{source}'.\n"
+            f"API credentials not configured for '{source}'.\n"
             f"\n"
             f"Edit kurt.config and update:\n"
-            f"  RESEARCH_{source.upper()}_API_KEY=your_actual_api_key"
+            f"  RESEARCH_{source.upper()}_{key_name}=your_actual_key"
         )
 
     return source_config
@@ -127,6 +131,11 @@ def create_template_config(source: str) -> dict[str, Any]:
             "max_tokens": "4000",
             "temperature": "0.2",
         }
+    elif source == "apify":
+        return {
+            "api_token": "YOUR_APIFY_API_TOKEN",
+            "default_actor": "apidojo/tweet-scraper",
+        }
     else:
         return {
             "api_key": "YOUR_API_KEY",
@@ -146,7 +155,7 @@ def source_configured(source: str) -> bool:
         source: Research source name
 
     Returns:
-        True if source is configured with valid API key
+        True if source is configured with valid API key/token
     """
     try:
         config = load_research_config()
@@ -159,9 +168,9 @@ def source_configured(source: str) -> bool:
         if has_placeholder_values(source_config):
             return False
 
-        # Check for empty API key
-        api_key = source_config.get("api_key", "")
-        if not api_key:
+        # Check for empty API key/token (different sources use different names)
+        api_credential = source_config.get("api_key") or source_config.get("api_token", "")
+        if not api_credential:
             return False
 
         return True

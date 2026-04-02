@@ -1,9 +1,14 @@
 """
 Monitoring adapters for research signals.
 
-Provides adapters for Reddit, HackerNews, and RSS/Atom feeds.
+Provides adapters for Reddit, HackerNews, RSS/Atom feeds, and Apify (social media).
 """
 
+from kurt.integrations.research.monitoring.apify import (
+    ActorConfig,
+    ApifyAdapter,
+    FieldMapping,
+)
 from kurt.integrations.research.monitoring.feeds import FeedAdapter
 from kurt.integrations.research.monitoring.hackernews import HackerNewsAdapter
 from kurt.integrations.research.monitoring.models import Signal
@@ -14,4 +19,7 @@ __all__ = [
     "RedditAdapter",
     "HackerNewsAdapter",
     "FeedAdapter",
+    "ApifyAdapter",
+    "ActorConfig",
+    "FieldMapping",
 ]

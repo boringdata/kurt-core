@@ -88,6 +88,14 @@ class SQLiteClient(DatabaseClient):
 
         register_all_models()
 
+        # Discover YAML workflows and generate their table models
+        try:
+            from kurt.workflows.registry import discover_yaml_workflows
+
+            discover_yaml_workflows()
+        except Exception as e:
+            logger.warning(f"Failed to discover YAML workflows: {e}")
+
         self._ensure_directory()
         db_path = self.get_database_path()
 
