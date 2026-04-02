@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Copy, ChevronDown, ChevronRight } from 'lucide-react'
+import { Copy, ChevronDown, ChevronRight, Table2, Image, Film, Video } from 'lucide-react'
 
 const apiBase = import.meta.env.VITE_API_URL || ''
 const apiUrl = (path) => `${apiBase}${path}`
@@ -37,6 +37,42 @@ const formatDuration = (ms) => {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = Math.round(seconds % 60)
   return `${minutes}m ${remainingSeconds}s`
+}
+
+const PAGE_TYPE_ICONS = {
+  'data-table': Table2,
+  'image': Image,
+  'motion-canvas': Film,
+  'video': Video,
+  'video-sequence': Video,
+}
+
+const PAGE_TYPE_LABELS = {
+  'data-table': 'Data Table',
+  'image': 'Image',
+  'motion-canvas': 'Motion Canvas',
+  'video': 'Video',
+  'video-sequence': 'Video Sequence',
+}
+
+function PageButton({ page, workflowId, onOpenPage }) {
+  const Icon = PAGE_TYPE_ICONS[page.type] || Table2
+  const label = page.title || PAGE_TYPE_LABELS[page.type] || page.id
+  return (
+    <button
+      type="button"
+      className="workflow-page-btn"
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpenPage?.(page)
+      }}
+      title={`Open ${label}`}
+    >
+      <Icon size={12} />
+      <span className="workflow-page-btn-label">{label}</span>
+      {page.seed && <span className="workflow-page-seed-dot" title="Seed data" />}
+    </button>
+  )
 }
 
 const normalizeInputsArgs = (inputs) => {
@@ -1118,11 +1154,13 @@ export default function WorkflowRow({
   onCancel,
   onRetry,
   onOpenDetail,
+  onOpenPage,
   getStatusBadgeClass,
   depth = 0,
 }) {
   const [liveStatus, setLiveStatus] = useState(null)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [pages, setPages] = useState([])
 
   const isRunning = workflow.status === 'PENDING' || workflow.status === 'ENQUEUED'
   const canRetry = ['SUCCESS', 'ERROR', 'CANCELLED', 'WARNING', 'RETRIES_EXCEEDED'].includes(workflow.status)
@@ -1199,6 +1237,23 @@ export default function WorkflowRow({
 
     fetchStatus()
   }, [isExpanded, workflow?.workflow_uuid, fetchStatus])
+
+  // Fetch pages when expanded
+  useEffect(() => {
+    if (!isExpanded || !workflow?.workflow_uuid) return
+    const fetchPages = async () => {
+      try {
+        const res = await fetch(apiUrl(`/api/workflows/${workflow.workflow_uuid}/pages`))
+        if (res.ok) {
+          const data = await res.json()
+          setPages(data.pages || [])
+        }
+      } catch (err) {
+        // Pages are optional
+      }
+    }
+    fetchPages()
+  }, [isExpanded, workflow?.workflow_uuid])
 
   const shortId = workflow.workflow_uuid?.slice(0, 8) || ''
   // Use definition_name for agent workflows, otherwise use the workflow name
@@ -1420,6 +1475,19 @@ export default function WorkflowRow({
               </div>
             )}
           </div>
+
+          {pages.length > 0 && (
+            <div className="workflow-pages-row">
+              {pages.map((page) => (
+                <PageButton
+                  key={page.id}
+                  page={page}
+                  workflowId={workflow.workflow_uuid}
+                  onOpenPage={onOpenPage}
+                />
+              ))}
+            </div>
+          )}
 
           <CommandBlock command={command} />
           <WorkflowConfigSection workflow={workflow} liveStatus={liveStatus} />

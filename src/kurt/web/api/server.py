@@ -20,6 +20,7 @@ from kurt.web.api.routes.approval import router as approval_router
 from kurt.web.api.routes.claude import router as claude_router
 from kurt.web.api.routes.documents import router as documents_router
 from kurt.web.api.routes.files import router as files_router
+from kurt.web.api.routes.pages import router as pages_router
 from kurt.web.api.routes.system import router as system_router
 from kurt.web.api.routes.websockets import router as websockets_router
 from kurt.web.api.routes.workflows import router as workflows_router
@@ -62,6 +63,7 @@ app.include_router(files_router)
 app.include_router(approval_router)
 app.include_router(claude_router)
 app.include_router(workflows_router)
+app.include_router(pages_router)
 app.include_router(websockets_router)
 
 
