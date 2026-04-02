@@ -855,6 +855,15 @@ async def test_real_fetch(tmp_sqlmodel_project):
 
     result = await tool.run(params, tool_context)
 
+    if not result.success:
+        error_msg = result.data[0].get("error", "") if result.data else ""
+        if (
+            "CERTIFICATE_VERIFY_FAILED" in error_msg
+            or "No content from: https://example.com" in error_msg
+            or error_msg == "connection_error"
+        ):
+            pytest.skip(f"real fetch unavailable in this environment: {error_msg}")
+
     assert result.success is True
     assert len(result.data) == 1
     assert result.data[0]["status"] == "SUCCESS"
