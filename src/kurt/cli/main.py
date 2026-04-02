@@ -158,6 +158,7 @@ class AliasedLazyGroup(click.Group):
         "help": ("kurt.cli.show", "show_group"),
         # Agent workflows
         "agents": ("kurt.workflows.agents.cli", "agents_group"),
+        "media": ("kurt.workflows.media.cli", "media_group"),
         # Skill management
         "skill": ("kurt.cli.skill", "skill"),
     },
@@ -209,7 +210,7 @@ def main(ctx, json_output: bool, quiet: bool):
 
     # Skip auto-migrate for commands that don't need DB or use Dolt CLI directly
     # doctor/repair use Dolt CLI commands which conflict with the auto-started server
-    if ctx.invoked_subcommand in ["init", "help", "doctor", "repair"]:
+    if ctx.invoked_subcommand in ["init", "help", "doctor", "repair", "media"]:
         return
 
     # Skip if no project initialized

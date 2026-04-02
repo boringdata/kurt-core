@@ -14,6 +14,8 @@ import EmptyPanel from './panels/EmptyPanel'
 import ReviewPanel from './panels/ReviewPanel'
 import WorkflowsPanel from './panels/WorkflowsPanel'
 import WorkflowTerminalPanel from './panels/WorkflowTerminalPanel'
+import ImageEditorPanel from './panels/ImageEditorPanel'
+import VideoEditorPanel from './panels/VideoEditorPanel'
 import WorkflowDetailPanel from './panels/WorkflowDetailPanel'
 import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
 
@@ -32,6 +34,8 @@ const components = {
   review: ReviewPanel,
   workflows: WorkflowsPanel,
   workflowTerminal: WorkflowTerminalPanel,
+  imageEditor: ImageEditorPanel,
+  videoEditor: VideoEditorPanel,
   workflowDetail: WorkflowDetailPanel,
 }
 

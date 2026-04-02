@@ -76,6 +76,53 @@ if CLIENT_DIST.exists() and (CLIENT_DIST / "index.html").exists():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
 
+@app.get("/api/project")
+def api_project():
+    return {"root": str(Path.cwd().resolve())}
+
+
+@app.get("/api/config")
+def api_config():
+    """Get Kurt project configuration for frontend sections."""
+    try:
+        from kurt.config import config_file_exists, load_config
+
+        if not config_file_exists():
+            return {
+                "available": False,
+                "paths": {
+                    "sources": "sources",
+                    "projects": "projects",
+                    "workflows": "workflows",
+                    "rules": "rules",
+                    "kurt": ".kurt",
+                },
+            }
+
+        config = load_config()
+        return {
+            "available": True,
+            "paths": {
+                "sources": config.PATH_SOURCES,
+                "projects": config.PATH_PROJECTS,
+                "workflows": config.PATH_WORKFLOWS,
+                "rules": config.PATH_RULES,
+                "kurt": str(Path(config.PATH_DB).parent),
+            },
+        }
+    except Exception:
+        return {
+            "available": False,
+            "paths": {
+                "sources": "sources",
+                "projects": "projects",
+                "workflows": "workflows",
+                "rules": "rules",
+                "kurt": ".kurt",
+            },
+        }
+
+
 # --- SPA catch-all route for production ---
 # This must be registered LAST to not interfere with API routes
 if CLIENT_DIST.exists() and (CLIENT_DIST / "index.html").exists():
