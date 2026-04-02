@@ -56,12 +56,16 @@ def _check_engine_status(engine: str) -> tuple[str, str]:
         if os.getenv("TWITTERAPI_API_KEY"):
             return "ready", "TwitterAPI.io extraction"
         return "missing", "Set TWITTERAPI_API_KEY"
+    if engine == "composio":
+        if os.getenv("COMPOSIO_API_KEY") and os.getenv("COMPOSIO_CONNECTION_ID"):
+            return "ready", "Composio Twitter/X extraction"
+        return "missing", "Set COMPOSIO_API_KEY and COMPOSIO_CONNECTION_ID"
     return "unknown", "Unknown engine"
 
 
 def _list_engines(output_format: str) -> None:
     """List available fetch engines and their status."""
-    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi"]
+    engines = ["trafilatura", "httpx", "firecrawl", "tavily", "apify", "twitterapi", "composio"]
     engine_info = []
 
     for engine in engines:
@@ -106,11 +110,14 @@ def _list_engines(output_format: str) -> None:
 @click.option("--files", "files_paths", help="Comma-separated list of local file paths")
 @click.option(
     "--provider",
-    help="Provider name for fetch (trafilatura, httpx, tavily, firecrawl, apify, twitterapi)",
+    help="Provider name for fetch (trafilatura, httpx, tavily, firecrawl, apify, twitterapi, composio)",
 )
 @click.option(
     "--engine",
-    type=click.Choice(["firecrawl", "trafilatura", "httpx", "tavily", "apify", "twitterapi"], case_sensitive=False),
+    type=click.Choice(
+        ["firecrawl", "trafilatura", "httpx", "tavily", "apify", "twitterapi", "composio"],
+        case_sensitive=False,
+    ),
     help="[Deprecated: use --provider] Fetch engine to use",
 )
 @click.option(

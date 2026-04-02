@@ -79,7 +79,7 @@ class FetchToolConfig(BaseModel):
 
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi, composio",
     )
     platform: str | None = Field(
         default=None,
@@ -202,7 +202,7 @@ class FetchParams(BaseModel):
     # Config fields (flattened for executor compatibility)
     engine: str = Field(
         default="trafilatura",
-        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi",
+        description="Fetch engine: trafilatura, httpx, tavily, firecrawl, apify, twitterapi, composio",
     )
     platform: str | None = Field(
         default=None,
@@ -497,6 +497,38 @@ async def _fetch_with_twitterapi(
     return result.content, result.metadata
 
 
+async def _fetch_with_composio(
+    url: str,
+    timeout_s: float,
+    client: Any,
+    **kwargs: Any,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Fetch content using Composio.
+
+    Args:
+        url: Twitter/X URL (tweet or profile)
+        timeout_s: Request timeout in seconds
+        client: HTTP client (unused - composio uses its own)
+        **kwargs: Additional options (ignored)
+
+    Returns:
+        Tuple of (content, metadata)
+
+    Raises:
+        ValueError: If fetch fails
+    """
+    from kurt.tools.fetch.providers.composio.config import ComposioProviderConfig
+    from kurt.tools.fetch.providers.composio.provider import ComposioFetcher
+
+    config = ComposioProviderConfig(timeout=timeout_s)
+    fetcher = ComposioFetcher(config)
+    result = await asyncio.to_thread(fetcher.fetch, url)
+    if not result.success:
+        raise ValueError(result.error or "No result from Composio")
+    return result.content, result.metadata
+
+
 # Engine dispatcher
 _FETCH_ENGINES = {
     "trafilatura": _fetch_with_trafilatura,
@@ -505,6 +537,7 @@ _FETCH_ENGINES = {
     "firecrawl": _fetch_with_firecrawl,
     "apify": _fetch_with_apify,
     "twitterapi": _fetch_with_twitterapi,
+    "composio": _fetch_with_composio,
 }
 
 

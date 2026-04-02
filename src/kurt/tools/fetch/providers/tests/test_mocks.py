@@ -9,6 +9,12 @@ from kurt.tools.fetch.providers.apify.mock import (
 from kurt.tools.fetch.providers.apify.mock import (
     create_mock as create_apify_mock,
 )
+from kurt.tools.fetch.providers.composio.mock import (
+    MockComposioFetcher,
+)
+from kurt.tools.fetch.providers.composio.mock import (
+    create_mock as create_composio_mock,
+)
 from kurt.tools.fetch.providers.firecrawl.mock import (
     MockFirecrawlFetcher,
 )
@@ -49,6 +55,7 @@ ALL_FETCH_MOCKS = [
     ("firecrawl", MockFirecrawlFetcher, create_firecrawl_mock),
     ("apify", MockApifyFetcher, create_apify_mock),
     ("twitterapi", MockTwitterApiFetcher, create_twitterapi_mock),
+    ("composio", MockComposioFetcher, create_composio_mock),
 ]
 
 

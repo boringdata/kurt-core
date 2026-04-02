@@ -28,7 +28,7 @@ class TestMockFetchRegistry:
 
     def test_has_all_fetch_providers(self, mock_fetch_registry):
         providers = mock_fetch_registry._providers.get("fetch", {})
-        expected = {"trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi"}
+        expected = {"trafilatura", "httpx", "tavily", "firecrawl", "apify", "twitterapi", "composio"}
         assert set(providers.keys()) == expected
 
     def test_get_provider_returns_mock(self, mock_fetch_registry):
@@ -45,7 +45,7 @@ class TestMockFetchRegistry:
 
     def test_list_providers(self, mock_fetch_registry):
         providers = mock_fetch_registry.list_providers("fetch")
-        assert len(providers) == 6
+        assert len(providers) == 7
 
     def test_metadata_populated(self, mock_fetch_registry):
         meta = mock_fetch_registry._provider_meta.get("fetch", {})
@@ -83,7 +83,7 @@ class TestMockFullRegistry:
         assert "map" in mock_full_registry._providers
 
     def test_fetch_providers_count(self, mock_full_registry):
-        assert len(mock_full_registry._providers["fetch"]) == 6
+        assert len(mock_full_registry._providers["fetch"]) == 7
 
     def test_map_providers_count(self, mock_full_registry):
         assert len(mock_full_registry._providers["map"]) == 6
@@ -115,6 +115,8 @@ class TestEnvironmentFixtures:
         assert os.environ.get("FIRECRAWL_API_KEY") == "test-firecrawl-key"
         assert os.environ.get("APIFY_API_KEY") == "test-apify-key"
         assert os.environ.get("TWITTERAPI_API_KEY") == "test-twitterapi-key"
+        assert os.environ.get("COMPOSIO_API_KEY") == "test-composio-key"
+        assert os.environ.get("COMPOSIO_CONNECTION_ID") == "test-composio-connection"
 
 
 class TestIndividualMockFixtures:
